@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Users,
   GraduationCap,
@@ -7,6 +7,7 @@ import {
   Download,
   ExternalLink,
   ShieldCheck,
+  ShieldAlert,
   CheckCircle2,
   Clock,
   Key,
@@ -44,10 +45,13 @@ import {
   getStoredPreceptors,
   saveStoredPreceptors,
   DEFAULT_REGISTERED_PRECEPTORS,
+  OFFICIAL_IMPORTED_PRECEPTORS,
   FULL_15_PRECEPTORS_ROSTER,
   BLANK_TRAINEE_INFO,
   BLANK_FINAL_SIGNOFF,
+  UserRole,
 } from '../utils/storage';
+import { cloudSync } from '../utils/cloudSync';
 import mammoth from 'mammoth';
 import {
   Document,
@@ -66,8 +70,11 @@ interface InstructorCohortManagerProps {
   currentStudentId: string;
   onSelectStudent: (student: CohortStudentRecord, targetTab?: TabType) => void;
   onAddStudent: (newRecord: CohortStudentRecord) => void;
+  onDeleteStudent?: (studentId: string) => void;
   onImportStudentDossier: (record: CohortStudentRecord) => void;
   onImportMultipleStudentDossiers?: (records: CohortStudentRecord[]) => void;
+  userRole?: UserRole;
+  onRequireLeadEducatorAuth?: () => void;
 }
 
 export function InstructorCohortManager({
@@ -75,15 +82,37 @@ export function InstructorCohortManager({
   currentStudentId,
   onSelectStudent,
   onAddStudent,
+  onDeleteStudent,
   onImportStudentDossier,
   onImportMultipleStudentDossiers,
+  userRole = 'lead_educator',
+  onRequireLeadEducatorAuth,
 }: InstructorCohortManagerProps) {
+  const isLeadEducator = userRole === 'lead_educator';
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentId, setNewStudentId] = useState('');
-  const [newWard, setNewWard] = useState('Surgical Ward 4B');
-  const [newPreceptor, setNewPreceptor] = useState('Sister Almaz Tesfaye, RN, MSc');
+  const [newWard, setNewWard] = useState('Medical ICU');
+  const [newPreceptor, setNewPreceptor] = useState('Abaynesh Mekonnen');
+  const [studentToDelete, setStudentToDelete] = useState<CohortStudentRecord | null>(null);
+
+  const handleDeleteStudentClick = (student: CohortStudentRecord) => {
+    if (!isLeadEducator) {
+      onRequireLeadEducatorAuth?.();
+      return;
+    }
+    setStudentToDelete(student);
+  };
+
+  const handleConfirmDeleteStudent = () => {
+    if (!studentToDelete) return;
+    const targetId = studentToDelete.id || studentToDelete.traineeInfo.traineeId;
+    if (targetId && onDeleteStudent) {
+      onDeleteStudent(targetId);
+    }
+    setStudentToDelete(null);
+  };
 
   // Master institutional PIN
   const [currentPin, setCurrentPin] = useState(getPreceptorPin);
@@ -782,31 +811,44 @@ export function InstructorCohortManager({
     e.target.value = '';
   };
 
+  useEffect(() => {
+    const unsub = cloudSync.onPreceptorsUpdated((updated) => {
+      if (Array.isArray(updated) && updated.length > 0) {
+        setPreceptorsList(updated);
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
+
   const handlePopulate15Preceptors = () => {
-    setPreceptorsList(FULL_15_PRECEPTORS_ROSTER);
-    saveStoredPreceptors(FULL_15_PRECEPTORS_ROSTER);
-    setBatchImportNotification('Successfully loaded all 15 preceptors & mentors with individual PINs!');
+    setPreceptorsList(DEFAULT_REGISTERED_PRECEPTORS);
+    saveStoredPreceptors(DEFAULT_REGISTERED_PRECEPTORS);
+    cloudSync.syncPreceptors(DEFAULT_REGISTERED_PRECEPTORS);
+    setBatchImportNotification('Successfully loaded all 16 faculty, preceptors & mentors with Lead Educator Mr. Yohannes Ayalew!');
     setTimeout(() => setBatchImportNotification(null), 4000);
   };
 
   const handleOpenBatchModal = () => {
     setBatchImportNotification(null);
     setBatchRawText(
-      `Sister Almaz Tefera, Senior Clinical Preceptor, Medical ICU, 4182, AT\n` +
-      `Dr. Berhanu Tesfaye, Clinical Mentor, Emergency Center & Trauma, 7021, BT\n` +
-      `Sister Tigist Haile, Lead Clinical Educator, Academic Nursing, 9090, TH\n` +
-      `Brother Dawit Hailu, Senior Clinical Preceptor, Surgical ICU, 3314, DH\n` +
-      `Sister Hiwot Kebede, Clinical Mentor, Coronary Care Unit, 5520, HK\n` +
-      `Brother Samuel Girma, Clinical Preceptor, Resuscitation & Red Zone, 6241, SG\n` +
-      `Sister Martha Assefa, Clinical Mentor, Pediatric ICU, 1845, MA\n` +
-      `Brother Yared Mengistu, Clinical Preceptor, Neuro-ICU, 2973, YM\n` +
-      `Sister Bethlehem Worku, Clinical Preceptor, Renal & Hemodialysis, 8412, BW\n` +
-      `Brother Elias Tadesse, Clinical Mentor, Trauma & Orthopedics, 4930, ET\n` +
-      `Sister Senait Mekonnen, Clinical Preceptor, Burns Critical Care, 7154, SM\n` +
-      `Brother Solomon Bekele, Clinical Mentor, Main Operating Theatres, 3829, SB\n` +
-      `Sister Meron Getachew, Clinical Preceptor, Medical HDU, 6098, MG\n` +
-      `Brother Natnael Fikru, Clinical Mentor, Emergency Observation, 5217, NF\n` +
-      `Sister Rahel Desta, Clinical Supervisor, Clinical Quality & Audit, 8305, RD`
+      `Abaynesh Mekonnen, Clinical Preceptor, Clinical Rotation Ward, 2657, AM\n` +
+      `Aklil Hailu, Mentor, Clinical Rotation Ward, 2356, AH\n` +
+      `Amina Beshir, Clinical Preceptor, Clinical Rotation Ward, 7772, AB\n` +
+      `Asselefech Negewo, Clinical Preceptor, Clinical Rotation Ward, 3820, AN\n` +
+      `Boka Dugasa, Mentor, Clinical Rotation Ward, 6647, BD\n` +
+      `Getachew Wodajo, Clinical Preceptor, Clinical Rotation Ward, 5589, GW\n` +
+      `Jembere Tesfaye, Mentor, Clinical Rotation Ward, 2236, JT\n` +
+      `Kono Tadese, Clinical Preceptor, Clinical Rotation Ward, 9378, KT\n` +
+      `Meriem Seid, Clinical Preceptor, Clinical Rotation Ward, 9270, MS\n` +
+      `Mohamed Legas, Clinical Preceptor, Clinical Rotation Ward, 6979, ML\n` +
+      `Teje Tufa, Clinical Preceptor, Clinical Rotation Ward, 9141, TT\n` +
+      `Tiruneh Ararsa, Clinical Preceptor, Clinical Rotation Ward, 2902, TA\n` +
+      `Wondossen Tekileselasie, Clinical Preceptor, Clinical Rotation Ward, 3077, WT\n` +
+      `Zeleke Argaw, Mentor, Clinical Rotation Ward, 8148, ZA\n` +
+      `Zuriash Mengistu, Mentor, Clinical Rotation Ward, 5217, ZM\n` +
+      `Mr. Yohannes Ayalew, Program Coordinator, Medical-Surgical, 4182, LE`
     );
     setIsBatchModalOpen(true);
   };
@@ -876,6 +918,7 @@ export function InstructorCohortManager({
 
     setPreceptorsList(newList);
     saveStoredPreceptors(newList);
+    cloudSync.syncPreceptors(newList);
     setIsBatchModalOpen(false);
     setBatchImportNotification(`Successfully imported ${parsed.length} preceptors! Directory now has ${newList.length} total.`);
     setTimeout(() => setBatchImportNotification(null), 4000);
@@ -913,18 +956,36 @@ export function InstructorCohortManager({
     setTimeout(() => setPinSavedMessage(false), 3000);
   };
 
-  const handleOpenAddPreceptor = () => {
+  const handleOpenAddPreceptor = (role: 'preceptor' | 'mentor' | 'lead_educator' = 'preceptor') => {
+    if (!isLeadEducator) {
+      onRequireLeadEducatorAuth?.();
+      return;
+    }
     setEditingPreceptorId(null);
     setPrecName('');
-    setPrecTitle('Clinical Preceptor');
-    setPrecRole('preceptor');
-    setPrecWard('General Inpatient Ward');
+    setPrecTitle(
+      role === 'lead_educator'
+        ? 'Lead Clinical Educator / Program Coordinator'
+        : role === 'mentor'
+        ? 'Clinical Mentor'
+        : 'Senior Clinical Preceptor'
+    );
+    setPrecRole(role);
+    setPrecWard(role === 'lead_educator' ? 'Clinical Education & Training Directorate' : 'Medical ICU');
     setPrecPin('');
-    setPrecInitials('');
+    setPrecInitials(role === 'lead_educator' ? 'LE' : '');
     setIsPreceptorModalOpen(true);
   };
 
+  const handleOpenAddLeadEducator = () => {
+    handleOpenAddPreceptor('lead_educator');
+  };
+
   const handleOpenEditPreceptor = (p: RegisteredPreceptor) => {
+    if (!isLeadEducator) {
+      onRequireLeadEducatorAuth?.();
+      return;
+    }
     setEditingPreceptorId(p.id);
     setPrecName(p.name);
     setPrecTitle(p.title);
@@ -936,6 +997,10 @@ export function InstructorCohortManager({
   };
 
   const handleDeletePreceptor = (id: string) => {
+    if (!isLeadEducator) {
+      onRequireLeadEducatorAuth?.();
+      return;
+    }
     if (preceptorsList.length <= 1) {
       alert('At least one instructor must remain registered.');
       return;
@@ -943,6 +1008,7 @@ export function InstructorCohortManager({
     const filtered = preceptorsList.filter((p) => p.id !== id);
     setPreceptorsList(filtered);
     saveStoredPreceptors(filtered);
+    cloudSync.syncPreceptors(filtered);
   };
 
   const handleSavePreceptor = (e: React.FormEvent) => {
@@ -989,6 +1055,7 @@ export function InstructorCohortManager({
 
     setPreceptorsList(updatedList);
     saveStoredPreceptors(updatedList);
+    cloudSync.syncPreceptors(updatedList);
     setIsPreceptorModalOpen(false);
   };
 
@@ -996,6 +1063,7 @@ export function InstructorCohortManager({
     if (confirm('Reset the instructor registry to AAU standard preceptors?')) {
       setPreceptorsList(DEFAULT_REGISTERED_PRECEPTORS);
       saveStoredPreceptors(DEFAULT_REGISTERED_PRECEPTORS);
+      cloudSync.syncPreceptors(DEFAULT_REGISTERED_PRECEPTORS);
     }
   };
 
@@ -1063,6 +1131,33 @@ export function InstructorCohortManager({
         </div>
       </div>
 
+      {/* Role Alert Banner when accessed by Preceptors or other staff */}
+      {!isLeadEducator && (
+        <div className="p-4 bg-amber-50 border border-amber-300 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs text-amber-950 shadow-2xs">
+          <div className="flex items-start gap-2.5">
+            <ShieldAlert className="w-5 h-5 text-amber-700 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-bold text-slate-900">
+                Preceptor Clinical Evaluation Mode (Read &amp; Review)
+              </p>
+              <p className="text-amber-900 text-[11px] mt-0.5 leading-relaxed">
+                You are viewing the cohort as a <strong>Clinical Preceptor / Mentor</strong>. You have permission to select any student and evaluate their clinical sessions. <strong>Only the Lead Clinical Educator</strong> can add/enroll new trainees, import Word rosters, or register preceptors and mentors.
+              </p>
+            </div>
+          </div>
+          {onRequireLeadEducatorAuth && (
+            <button
+              type="button"
+              onClick={onRequireLeadEducatorAuth}
+              className="px-3.5 py-1.5 text-xs font-semibold text-white bg-amber-800 hover:bg-amber-900 rounded-xl transition-colors shrink-0 flex items-center gap-1.5 shadow-2xs cursor-pointer"
+            >
+              <Key className="w-3.5 h-3.5 text-amber-300" />
+              <span>Unlock Lead Educator Admin</span>
+            </button>
+          )}
+        </div>
+      )}
+
       {/* Deployment & Workflow Guide for the Instructor */}
       <div className="bg-white p-6 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
         <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
@@ -1105,30 +1200,45 @@ export function InstructorCohortManager({
               </h3>
             </div>
             <p className="text-xs text-slate-500 mt-0.5">
-              Each instructor has their own personal PIN. Entering their PIN automatically attributes their name and initials to verified sessions.
+              {isLeadEducator
+                ? 'Lead Educator Admin: Manage assigned preceptors, mentors, and program educators. Only Lead Educators can register new staff or assign PINs.'
+                : 'Each instructor has their own personal PIN. Entering their PIN automatically attributes their name and initials to verified sessions.'}
             </p>
           </div>
 
           <div className="flex flex-wrap items-center gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={handlePopulate15Preceptors}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-950 bg-amber-400 hover:bg-amber-300 rounded-xl transition-colors shadow-2xs"
-              title="Quickly populate the full 15-preceptor hospital faculty roster"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>⚡ Load 15 Preceptors</span>
-            </button>
+            {isLeadEducator && (
+              <>
+                <button
+                  type="button"
+                  onClick={handlePopulate15Preceptors}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-950 bg-amber-400 hover:bg-amber-300 rounded-xl transition-colors shadow-2xs"
+                  title="Quickly populate the official 16-member faculty roster (preceptors, mentors & Lead Educator)"
+                >
+                  <Sparkles className="w-3.5 h-3.5" />
+                  <span>⚡ Load Official Faculty (16)</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={handleOpenBatchModal}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-              title="Paste multiple preceptors at once"
-            >
-              <FileText className="w-3.5 h-3.5" />
-              <span>Batch Import / CSV</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={handleOpenBatchModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                  title="Paste multiple preceptors at once"
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Batch Import / CSV</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPins(!showPins)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                >
+                  {showPins ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                  <span>{showPins ? 'Hide PINs' : 'Show PINs'}</span>
+                </button>
+              </>
+            )}
 
             <button
               type="button"
@@ -1140,23 +1250,39 @@ export function InstructorCohortManager({
               <span>Export</span>
             </button>
 
-            <button
-              type="button"
-              onClick={() => setShowPins(!showPins)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
-            >
-              {showPins ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
-              <span>{showPins ? 'Hide PINs' : 'Show PINs'}</span>
-            </button>
+            {isLeadEducator ? (
+              <>
+                <button
+                  type="button"
+                  onClick={handleOpenAddLeadEducator}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-purple-950 bg-purple-100 hover:bg-purple-200 border border-purple-300 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                  title="Add a Lead Clinical Educator with full administrative permissions"
+                >
+                  <Award className="w-3.5 h-3.5 text-purple-700" />
+                  <span>+ Add Lead Educator</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={handleOpenAddPreceptor}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl transition-colors shadow-2xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>+ Add Preceptor</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenAddPreceptor('preceptor')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                  title="Register a clinical preceptor or mentor"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>+ Add Preceptor</span>
+                </button>
+              </>
+            ) : (
+              <button
+                type="button"
+                onClick={onRequireLeadEducatorAuth}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                title="Only the Lead Clinical Educator can add new instructors"
+              >
+                <Lock className="w-3.5 h-3.5 text-amber-600" />
+                <span>+ Add Preceptor / Educator (Lead Only)</span>
+              </button>
+            )}
           </div>
         </div>
 
@@ -1311,28 +1437,34 @@ export function InstructorCohortManager({
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10px] uppercase font-bold text-slate-400">PIN:</span>
                       <span className="text-xs font-mono font-bold text-teal-950 bg-white px-2 py-0.5 rounded border border-slate-200 shadow-2xs">
-                        {showPins ? preceptor.pin : '••••'}
+                        {isLeadEducator ? (showPins ? preceptor.pin : '••••') : '•••• (Assigned)'}
                       </span>
                     </div>
 
-                    <div className="flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => handleOpenEditPreceptor(preceptor)}
-                        className="p-1 text-slate-500 hover:text-teal-900 rounded hover:bg-white"
-                        title="Edit Name, Ward, or PIN"
-                      >
-                        <Edit2 className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeletePreceptor(preceptor.id)}
-                        className="p-1 text-slate-400 hover:text-rose-700 rounded hover:bg-white"
-                        title="Remove preceptor"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
-                    </div>
+                    {isLeadEducator ? (
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => handleOpenEditPreceptor(preceptor)}
+                          className="p-1 text-slate-500 hover:text-teal-900 rounded hover:bg-white cursor-pointer"
+                          title="Edit Name, Ward, or PIN"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePreceptor(preceptor.id)}
+                          className="p-1 text-slate-400 hover:text-rose-700 rounded hover:bg-white cursor-pointer"
+                          title="Remove preceptor"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ) : (
+                      <span className="text-[10px] text-teal-800 font-semibold bg-teal-50 px-2 py-0.5 rounded border border-teal-200">
+                        Active Staff
+                      </span>
+                    )}
                   </div>
                 </div>
               ))}
@@ -1341,46 +1473,67 @@ export function InstructorCohortManager({
         })()}
 
         {/* Master Institutional Backup PIN & AAU Defaults */}
-        <div className="p-3 bg-teal-50/50 rounded-xl border border-teal-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
-          <div className="space-y-0.5">
-            <span className="font-bold text-teal-950 flex items-center gap-1.5">
-              <ShieldCheck className="w-4 h-4 text-teal-700" />
-              <span>Master Institutional Backup Code</span>
-            </span>
-            <p className="text-[11px] text-teal-800">
-              Shared fallback passcode for all clinical supervisors (Current: <code className="font-bold">{currentPin}</code>).
-            </p>
-          </div>
-
-          <form onSubmit={handleUpdateMasterPin} className="flex items-center gap-2">
-            <input
-              type="text"
-              maxLength={10}
-              placeholder="New master code..."
-              value={newPinInput}
-              onChange={(e) => setNewPinInput(e.target.value)}
-              className="w-32 px-2.5 py-1 text-xs rounded-lg border border-teal-300 bg-white font-mono"
-            />
-            <button
-              type="submit"
-              className="px-3 py-1 text-xs font-semibold text-white bg-teal-800 hover:bg-teal-900 rounded-lg shrink-0"
-            >
-              Update
-            </button>
-            {pinSavedMessage && (
-              <span className="text-[11px] text-emerald-800 font-bold flex items-center gap-1">
-                <CheckCircle2 className="w-3 h-3" /> Saved
+        {isLeadEducator ? (
+          <div className="p-3 bg-teal-50/50 rounded-xl border border-teal-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="space-y-0.5">
+              <span className="font-bold text-teal-950 flex items-center gap-1.5">
+                <ShieldCheck className="w-4 h-4 text-teal-700" />
+                <span>Master Institutional Backup Code</span>
               </span>
+              <p className="text-[11px] text-teal-800">
+                Shared fallback passcode for all clinical supervisors (Current: <code className="font-bold">{currentPin}</code>).
+              </p>
+            </div>
+
+            <form onSubmit={handleUpdateMasterPin} className="flex items-center gap-2">
+              <input
+                type="text"
+                maxLength={10}
+                placeholder="New master code..."
+                value={newPinInput}
+                onChange={(e) => setNewPinInput(e.target.value)}
+                className="w-32 px-2.5 py-1 text-xs rounded-lg border border-teal-300 bg-white font-mono"
+              />
+              <button
+                type="submit"
+                className="px-3 py-1 text-xs font-semibold text-white bg-teal-800 hover:bg-teal-900 rounded-lg shrink-0 cursor-pointer"
+              >
+                Update
+              </button>
+              {pinSavedMessage && (
+                <span className="text-[11px] text-emerald-800 font-bold flex items-center gap-1">
+                  <CheckCircle2 className="w-3 h-3" /> Saved
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={handleResetPreceptorsToDefault}
+                className="text-[11px] text-teal-700 hover:text-teal-950 underline ml-2 cursor-pointer"
+              >
+                Reset to Defaults
+              </button>
+            </form>
+          </div>
+        ) : (
+          <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-2 text-slate-700">
+              <ShieldCheck className="w-4 h-4 text-teal-700" />
+              <span>
+                <strong>Master Passcode &amp; System Settings:</strong> Protected &amp; managed exclusively by the Lead Clinical Educator.
+              </span>
+            </div>
+            {onRequireLeadEducatorAuth && (
+              <button
+                type="button"
+                onClick={onRequireLeadEducatorAuth}
+                className="text-teal-800 hover:text-teal-950 font-bold text-[11px] flex items-center gap-1 self-start sm:self-auto cursor-pointer"
+              >
+                <Key className="w-3.5 h-3.5" />
+                <span>Enter Passcode to Edit</span>
+              </button>
             )}
-            <button
-              type="button"
-              onClick={handleResetPreceptorsToDefault}
-              className="text-[11px] text-teal-700 hover:text-teal-950 underline ml-2"
-            >
-              Reset to Defaults
-            </button>
-          </form>
-        </div>
+          </div>
+        )}
       </div>
 
       {/* How Mentors & Preceptors Access Evaluation Forms Guide */}
@@ -1443,47 +1596,68 @@ export function InstructorCohortManager({
           </div>
 
           <div className="flex flex-wrap items-center gap-2">
-            {/* Direct 1-click quick import from disk */}
-            <label
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300/80 rounded-xl transition-colors cursor-pointer shadow-2xs"
-              title="Pick a .json or .csv file to import and load student immediately with 1 click"
-            >
-              <Upload className="w-3.5 h-3.5 text-emerald-700" />
-              <span>⚡ Quick Upload (.docx / .csv / .json)</span>
-              <input
-                type="file"
-                accept=".docx,.doc,.json,.csv,.txt"
-                multiple
-                onChange={handleDirectQuickImport}
-                className="hidden"
-              />
-            </label>
+            {isLeadEducator ? (
+              <>
+                {/* Direct 1-click quick import from disk */}
+                <label
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border border-emerald-300/80 rounded-xl transition-colors cursor-pointer shadow-2xs"
+                  title="Pick a .docx, .csv, or .json file to import and load student immediately with 1 click"
+                >
+                  <Upload className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>⚡ Quick Upload (.docx / .csv / .json)</span>
+                  <input
+                    type="file"
+                    accept=".docx,.doc,.json,.csv,.txt"
+                    multiple
+                    onChange={handleDirectQuickImport}
+                    className="hidden"
+                  />
+                </label>
 
-            {/* Modal Dialog button */}
-            <button
-              type="button"
-              onClick={() => {
-                setDossierImportError(null);
-                setDossierImportPreview([]);
-                setDossierRawText('');
-                setUploadedFileNames([]);
-                setIsDossierModalOpen(true);
-              }}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-teal-900 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-xl transition-colors shadow-2xs cursor-pointer"
-              title="Open the enrollment guide to import Word files (.docx), CSV, or paste student lists"
-            >
-              <FileText className="w-3.5 h-3.5 text-teal-700" />
-              <span>Import Word / Roster Dialog</span>
-            </button>
+                {/* Modal Dialog button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setDossierImportError(null);
+                    setDossierImportPreview([]);
+                    setDossierRawText('');
+                    setUploadedFileNames([]);
+                    setIsDossierModalOpen(true);
+                  }}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-teal-900 bg-teal-50 hover:bg-teal-100 border border-teal-200/80 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                  title="Open the enrollment guide to import Word files (.docx), CSV, or paste student lists"
+                >
+                  <FileText className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Import Word / Roster Dialog</span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => setIsAddModalOpen(true)}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl transition-colors shadow-2xs"
-            >
-              <Plus className="w-3.5 h-3.5" />
-              <span>Add Student</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => setIsAddModalOpen(true)}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>Add Student</span>
+                </button>
+              </>
+            ) : (
+              <div className="flex items-center gap-2">
+                <span className="text-[11px] text-slate-500 italic">
+                  Student enrollment is restricted to Lead Clinical Educators.
+                </span>
+                {onRequireLeadEducatorAuth && (
+                  <button
+                    type="button"
+                    onClick={onRequireLeadEducatorAuth}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                    title="Unlock Lead Clinical Educator permissions to enroll students"
+                  >
+                    <Lock className="w-3.5 h-3.5 text-amber-600" />
+                    <span>Enroll Students (Lead Only)</span>
+                  </button>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
@@ -1574,6 +1748,15 @@ export function InstructorCohortManager({
                 >
                   <Award className="w-3.5 h-3.5 text-purple-700" />
                   <span>Part III Final</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleDeleteStudentClick(currentStudent)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 border border-rose-200 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                  title="Remove this trainee from the cohort"
+                >
+                  <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                  <span>Remove Trainee</span>
                 </button>
               </div>
             </div>
@@ -1705,6 +1888,15 @@ export function InstructorCohortManager({
                           <Award className="w-3.5 h-3.5 text-purple-700" />
                           <span>Part III Sign-off</span>
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => handleDeleteStudentClick(student)}
+                          className="inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-1 rounded-lg transition-colors text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 cursor-pointer"
+                          title={`Remove ${student.traineeInfo.traineeName || 'Trainee'} from cohort`}
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-rose-600" />
+                          <span className="hidden sm:inline">Remove</span>
+                        </button>
                       </div>
                     </td>
                   </tr>
@@ -1714,6 +1906,56 @@ export function InstructorCohortManager({
           </table>
         </div>
       </div>
+
+      {/* Remove Trainee Confirmation Modal */}
+      {studentToDelete && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-rose-50 border-b border-rose-200 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-rose-900">
+                <AlertCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                <h3 className="text-sm font-bold">Remove Enrolled Trainee</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStudentToDelete(null)}
+                className="text-slate-400 hover:text-slate-600 p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+            <div className="p-5 space-y-4 text-xs">
+              <p className="text-slate-700 leading-relaxed">
+                Are you sure you want to remove{' '}
+                <strong className="text-slate-900 font-bold">
+                  {studentToDelete.traineeInfo.traineeName || 'this trainee'}
+                </strong>{' '}
+                (ID: <span className="font-mono font-bold text-teal-800">{studentToDelete.traineeInfo.traineeId || 'N/A'}</span>) from the cohort roster?
+              </p>
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-amber-950 text-[11px] leading-relaxed">
+                <strong>Notice:</strong> This student’s logbook and evaluations will be removed from the cohort directory across all connected instructor devices.
+              </div>
+            </div>
+            <div className="flex items-center justify-end gap-2 p-4 bg-slate-50 border-t border-slate-200">
+              <button
+                type="button"
+                onClick={() => setStudentToDelete(null)}
+                className="px-4 py-2 font-semibold text-slate-700 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteStudent}
+                className="px-4 py-2 font-semibold text-white bg-rose-600 hover:bg-rose-700 rounded-xl shadow-xs transition-colors inline-flex items-center gap-1.5 cursor-pointer"
+              >
+                <Trash2 className="w-3.5 h-3.5" />
+                <span>Yes, Remove Trainee</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Add Student Modal */}
       {isAddModalOpen && (
@@ -1814,7 +2056,11 @@ export function InstructorCohortManager({
               <div className="flex items-center gap-2">
                 <Key className="w-5 h-5 text-teal-300" />
                 <h3 className="text-sm font-bold">
-                  {editingPreceptorId ? 'Edit Instructor Details & Passcode' : 'Register New Instructor / Clinical Preceptor'}
+                  {editingPreceptorId
+                    ? 'Edit Instructor Details & Passcode'
+                    : precRole === 'lead_educator'
+                    ? 'Register New Lead Clinical Educator'
+                    : 'Register New Instructor / Clinical Preceptor'}
                 </h3>
               </div>
               <button
@@ -1862,9 +2108,9 @@ export function InstructorCohortManager({
                     onChange={(e) => setPrecRole(e.target.value as any)}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                   >
+                    <option value="lead_educator">⭐ Lead Clinical Educator</option>
                     <option value="preceptor">Clinical Preceptor</option>
                     <option value="mentor">Clinical Mentor</option>
-                    <option value="lead_educator">Lead Clinical Educator</option>
                   </select>
                 </div>
 
@@ -1880,6 +2126,18 @@ export function InstructorCohortManager({
                   />
                 </div>
               </div>
+
+              {precRole === 'lead_educator' && (
+                <div className="p-3 bg-purple-50 border border-purple-200 rounded-xl text-purple-950 text-[11px] space-y-1">
+                  <div className="flex items-center gap-1.5 font-bold text-purple-900">
+                    <Award className="w-4 h-4 text-purple-700" />
+                    <span>Lead Clinical Educator Privileges</span>
+                  </div>
+                  <p className="text-purple-900/90 leading-relaxed">
+                    This staff member will have full administrative authority to enroll student cohorts, import Word rosters, add or edit preceptors, and certify completed logbooks.
+                  </p>
+                </div>
+              )}
 
               <div>
                 <label className="block font-bold text-slate-800 mb-1">Professional Title / Credentials:</label>

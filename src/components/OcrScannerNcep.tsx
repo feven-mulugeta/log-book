@@ -191,10 +191,10 @@ export function OcrScannerNcep({ onImportOcrLogs, onNavigateToMatrix }: OcrScann
         attachments: softCopyEvidence ? [softCopyEvidence] : [],
         preceptorSignoff: {
           isSigned: true,
-          preceptorName: 'Sister Almaz Tesfaye, RN, MSc Clinical Nursing',
+          preceptorName: 'Sister Almaz Tefera, RN, MSc',
           preceptorInitials: row.preceptorInitials || 'AT',
           signatureDataUrl:
-            'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60" viewBox="0 0 200 60"><path d="M 20 40 Q 50 10, 80 35 T 140 25 T 180 35" fill="none" stroke="%231e3a8a" stroke-width="2.5"/><text x="30" y="52" font-family="cursive" font-size="12" fill="%231e3a8a">Almaz Tesfaye, RN</text></svg>',
+            'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="200" height="60" viewBox="0 0 200 60"><path d="M 20 40 Q 50 10, 80 35 T 140 25 T 180 35" fill="none" stroke="%231e3a8a" stroke-width="2.5"/><text x="30" y="52" font-family="cursive" font-size="12" fill="%231e3a8a">Almaz Tefera, RN</text></svg>',
           dateSigned: row.dateCompleted || todayStr,
           competencyDemonstrated: row.competencyRating || 'Satisfactory',
           comments: row.preceptorComments || 'Validated via scanned NCEP logbook.',

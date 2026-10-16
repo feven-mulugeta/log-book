@@ -10,6 +10,10 @@ import {
   INITIAL_DETAILED_LOG_SHEETS,
   INITIAL_FINAL_SIGNOFF,
 } from '../data/ncepData';
+import {
+  OFFICIAL_IMPORTED_PRECEPTORS,
+  OFFICIAL_IMPORTED_STUDENTS,
+} from '../data/officialImportedData';
 
 const STORAGE_KEYS = {
   TRAINEE_INFO: 'ncep_trainee_info',
@@ -23,150 +27,26 @@ const STORAGE_KEYS = {
 
 export type UserRole = 'trainee' | 'preceptor' | 'lead_educator';
 
-export const FULL_15_PRECEPTORS_ROSTER: RegisteredPreceptor[] = [
-  {
-    id: 'prec-1',
-    name: 'Sister Almaz Tefera, RN, MSc',
-    role: 'preceptor',
-    title: 'Senior Clinical Preceptor - Critical Care',
-    wardDepartment: 'Medical ICU',
-    pin: '4182',
-    initials: 'AT',
-  },
-  {
-    id: 'prec-2',
-    name: 'Dr. Berhanu Tesfaye, MD',
-    role: 'mentor',
-    title: 'Clinical Mentor - Emergency & Trauma Specialist',
-    wardDepartment: 'Emergency Center & Trauma',
-    pin: '7021',
-    initials: 'BT',
-  },
-  {
-    id: 'prec-3',
-    name: 'Sister Tigist Haile, RN, BSc',
-    role: 'lead_educator',
-    title: 'Lead Clinical Educator / Program Coordinator',
-    wardDepartment: 'Academic Nursing & Skills Lab',
-    pin: '9090',
-    initials: 'TH',
-  },
-  {
-    id: 'prec-4',
-    name: 'Brother Dawit Hailu, RN, BSc',
-    role: 'preceptor',
-    title: 'Senior Clinical Preceptor - Surgical Care',
-    wardDepartment: 'Surgical ICU',
-    pin: '3314',
-    initials: 'DH',
-  },
-  {
-    id: 'prec-5',
-    name: 'Sister Hiwot Kebede, RN, MSc',
-    role: 'mentor',
-    title: 'Clinical Mentor - Cardiology & CCU',
-    wardDepartment: 'Coronary Care Unit (CCU)',
-    pin: '5520',
-    initials: 'HK',
-  },
-  {
-    id: 'prec-6',
-    name: 'Brother Samuel Girma, RN',
-    role: 'preceptor',
-    title: 'Clinical Preceptor - Acute Resuscitation',
-    wardDepartment: 'Resuscitation & Red Zone',
-    pin: '6241',
-    initials: 'SG',
-  },
-  {
-    id: 'prec-7',
-    name: 'Sister Martha Assefa, RN, BSc',
-    role: 'mentor',
-    title: 'Clinical Mentor - Pediatric Critical Care',
-    wardDepartment: 'Pediatric ICU (PICU)',
-    pin: '1845',
-    initials: 'MA',
-  },
-  {
-    id: 'prec-8',
-    name: 'Brother Yared Mengistu, RN',
-    role: 'preceptor',
-    title: 'Clinical Preceptor - Neurological Nursing',
-    wardDepartment: 'Neuro-ICU & Stroke Unit',
-    pin: '2973',
-    initials: 'YM',
-  },
-  {
-    id: 'prec-9',
-    name: 'Sister Bethlehem Worku, RN, BSc',
-    role: 'preceptor',
-    title: 'Clinical Preceptor - Nephrology & Dialysis',
-    wardDepartment: 'Renal & Hemodialysis Unit',
-    pin: '8412',
-    initials: 'BW',
-  },
-  {
-    id: 'prec-10',
-    name: 'Brother Elias Tadesse, RN',
-    role: 'mentor',
-    title: 'Clinical Mentor - Orthopedics & Trauma',
-    wardDepartment: 'Trauma & Orthopedic Ward',
-    pin: '4930',
-    initials: 'ET',
-  },
-  {
-    id: 'prec-11',
-    name: 'Sister Senait Mekonnen, RN',
-    role: 'preceptor',
-    title: 'Clinical Preceptor - Burns & Wound Care',
-    wardDepartment: 'Burns Critical Care Unit',
-    pin: '7154',
-    initials: 'SM',
-  },
-  {
-    id: 'prec-12',
-    name: 'Brother Solomon Bekele, RN, BSc',
-    role: 'mentor',
-    title: 'Clinical Mentor - Perioperative Nursing',
-    wardDepartment: 'Main Operating Theatres',
-    pin: '3829',
-    initials: 'SB',
-  },
-  {
-    id: 'prec-13',
-    name: 'Sister Meron Getachew, RN',
-    role: 'preceptor',
-    title: 'Clinical Preceptor - High Dependency Care',
-    wardDepartment: 'Medical High Dependency Unit (HDU)',
-    pin: '6098',
-    initials: 'MG',
-  },
-  {
-    id: 'prec-14',
-    name: 'Brother Natnael Fikru, RN',
-    role: 'mentor',
-    title: 'Clinical Mentor - Emergency Triage & Observation',
-    wardDepartment: 'Emergency Observation Unit',
-    pin: '5217',
-    initials: 'NF',
-  },
-  {
-    id: 'prec-15',
-    name: 'Sister Rahel Desta, RN, MSc',
-    role: 'lead_educator',
-    title: 'Clinical Quality Supervisor & Nurse Educator',
-    wardDepartment: 'Clinical Quality & Nursing Audit',
-    pin: '8305',
-    initials: 'RD',
-  },
-];
-
-export const DEFAULT_REGISTERED_PRECEPTORS: RegisteredPreceptor[] = FULL_15_PRECEPTORS_ROSTER;
+export { OFFICIAL_IMPORTED_PRECEPTORS, OFFICIAL_IMPORTED_STUDENTS };
+export const FULL_15_PRECEPTORS_ROSTER: RegisteredPreceptor[] = OFFICIAL_IMPORTED_PRECEPTORS;
+export const DEFAULT_REGISTERED_PRECEPTORS: RegisteredPreceptor[] = OFFICIAL_IMPORTED_PRECEPTORS;
+export const DEFAULT_COHORT_STUDENTS: CohortStudentRecord[] = OFFICIAL_IMPORTED_STUDENTS;
 
 export function getStoredPreceptors(): RegisteredPreceptor[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.PRECEPTOR_ROSTER);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        // Ensure the official roster (Abaynesh Mekonnen, Yohannes Ayalew, Aklil Hailu) is present
+        const hasOfficial = parsed.some(
+          (p) => p && (p.name?.includes('Abaynesh') || p.name?.includes('Yohannes Ayalew') || p.name?.includes('Aklil'))
+        );
+        if (hasOfficial) {
+          return parsed;
+        }
+      }
+    }
   } catch (e) {
     console.error(e);
   }
@@ -235,6 +115,38 @@ export function verifyPreceptorPinDetailed(pin: string): {
   return { valid: false };
 }
 
+export function verifyLeadEducatorPin(pin: string): {
+  valid: boolean;
+  preceptor?: RegisteredPreceptor;
+} {
+  const trimmed = pin.trim();
+  if (!trimmed) return { valid: false };
+
+  // Master Lead Educator passcode
+  if (trimmed === getPreceptorPin()) {
+    return {
+      valid: true,
+      preceptor: {
+        id: 'master-lead-educator',
+        name: 'Lead Clinical Educator',
+        role: 'lead_educator',
+        title: 'Lead Clinical Educator / Program Coordinator',
+        wardDepartment: 'Clinical Education & Training Directorate',
+        pin: trimmed,
+        initials: 'LE',
+      },
+    };
+  }
+
+  // Preceptors registered with 'lead_educator' role
+  const matched = findPreceptorByPin(trimmed);
+  if (matched && matched.role === 'lead_educator') {
+    return { valid: true, preceptor: matched };
+  }
+
+  return { valid: false };
+}
+
 export const BLANK_TRAINEE_INFO: TraineeInformation = {
   traineeName: '',
   traineeId: '',
@@ -256,11 +168,16 @@ export const BLANK_FINAL_SIGNOFF: FinalCompetencySignoff = {
 export function getStoredTraineeInfo(): TraineeInformation {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.TRAINEE_INFO);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && parsed.traineeName && parsed.traineeName !== 'Feven Mulugeta') {
+        return parsed;
+      }
+    }
   } catch (e) {
     console.error(e);
   }
-  return INITIAL_TRAINEE_INFO;
+  return DEFAULT_COHORT_STUDENTS[0]?.traineeInfo || INITIAL_TRAINEE_INFO;
 }
 
 export function saveStoredTraineeInfo(info: TraineeInformation): void {
@@ -284,7 +201,15 @@ export function saveStoredDetailedLogs(logs: DetailedActivityLogSheet[]): void {
 export function getStoredFinalSignoff(): FinalCompetencySignoff {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.FINAL_SIGNOFF);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed) {
+        if (!parsed.leadEducatorName || parsed.leadEducatorName.includes('Berhanu') || parsed.leadEducatorName.includes('Tigist')) {
+          parsed.leadEducatorName = 'Mr. Yohannes Ayalew';
+        }
+        return parsed;
+      }
+    }
   } catch (e) {
     console.error(e);
   }
@@ -363,48 +288,50 @@ export function getStoredCohortStudents(): CohortStudentRecord[] {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        const seenIds = new Set<string>();
-        const seenTraineeIds = new Set<string>();
-        const sanitized: CohortStudentRecord[] = [];
+        // Ensure official enrolled students (Abdisa ... Zinet) are loaded
+        const hasOfficial = parsed.some(
+          (s) =>
+            s?.traineeInfo?.traineeName?.includes('Abdisa') ||
+            s?.traineeInfo?.traineeName?.includes('Zinet') ||
+            s?.traineeInfo?.traineeName?.includes('Abel Gatew')
+        );
 
-        for (let i = 0; i < parsed.length; i++) {
-          const item = parsed[i];
-          if (!item || !item.traineeInfo) continue;
+        if (hasOfficial) {
+          const seenIds = new Set<string>();
+          const seenTraineeIds = new Set<string>();
+          const sanitized: CohortStudentRecord[] = [];
 
-          const traineeId = item.traineeInfo.traineeId?.trim();
-          // If we already added this traineeId, skip duplicate
-          if (traineeId && seenTraineeIds.has(traineeId)) {
-            continue;
+          for (let i = 0; i < parsed.length; i++) {
+            const item = parsed[i];
+            if (!item || !item.traineeInfo) continue;
+
+            const traineeId = item.traineeInfo.traineeId?.trim();
+            // If we already added this traineeId, skip duplicate
+            if (traineeId && seenTraineeIds.has(traineeId)) {
+              continue;
+            }
+            if (traineeId) seenTraineeIds.add(traineeId);
+
+            let safeId = item.id ? String(item.id).trim() : `student-${Date.now()}-${i}`;
+            if (seenIds.has(safeId)) {
+              safeId = `${safeId}-${Date.now().toString().slice(-4)}-${i}`;
+            }
+            seenIds.add(safeId);
+
+            sanitized.push({
+              ...item,
+              id: safeId,
+            });
           }
-          if (traineeId) seenTraineeIds.add(traineeId);
 
-          let safeId = item.id ? String(item.id).trim() : `student-${Date.now()}-${i}`;
-          if (seenIds.has(safeId)) {
-            safeId = `${safeId}-${Date.now().toString().slice(-4)}-${i}`;
-          }
-          seenIds.add(safeId);
-
-          sanitized.push({
-            ...item,
-            id: safeId,
-          });
+          if (sanitized.length > 0) return sanitized;
         }
-
-        if (sanitized.length > 0) return sanitized;
       }
     }
   } catch (e) {
     console.error(e);
   }
-  return [
-    {
-      id: 'student-1',
-      traineeInfo: INITIAL_TRAINEE_INFO,
-      detailedLogs: INITIAL_DETAILED_LOG_SHEETS,
-      finalSignoff: INITIAL_FINAL_SIGNOFF,
-      updatedAt: new Date().toISOString(),
-    },
-  ];
+  return DEFAULT_COHORT_STUDENTS;
 }
 
 export function saveStoredCohortStudents(students: CohortStudentRecord[]): void {

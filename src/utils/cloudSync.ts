@@ -1,4 +1,5 @@
 import { CohortStudentRecord, RegisteredPreceptor } from '../types/nursing';
+import { saveStoredPreceptors, saveStoredCohortStudents } from './storage';
 
 export type SyncStatus = 'connected' | 'http_sync' | 'connecting' | 'offline';
 
@@ -214,10 +215,16 @@ class CloudSyncService {
   }
 
   private notifyCohortUpdated(cohort: CohortStudentRecord[]) {
+    if (Array.isArray(cohort) && cohort.length > 0) {
+      saveStoredCohortStudents(cohort);
+    }
     this.cohortUpdateListeners.forEach((l) => l(cohort));
   }
 
   private notifyPreceptorUpdated(preceptors: RegisteredPreceptor[]) {
+    if (Array.isArray(preceptors) && preceptors.length > 0) {
+      saveStoredPreceptors(preceptors);
+    }
     this.preceptorUpdateListeners.forEach((l) => l(preceptors));
   }
 
@@ -316,6 +323,19 @@ class CloudSyncService {
   }
 
   public async syncPreceptors(preceptors: RegisteredPreceptor[]) {
+    if (this.isWsConnected()) {
+      try {
+        this.ws!.send(
+          JSON.stringify({
+            type: 'SYNC_PRECEPTORS',
+            preceptors,
+          })
+        );
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
     try {
       await fetch('/api/sync/preceptors', {
         method: 'POST',

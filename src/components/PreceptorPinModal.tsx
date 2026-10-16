@@ -2,8 +2,8 @@ import React, { useState } from 'react';
 import { ShieldCheck, Lock, Key, X, AlertCircle, Users, CheckCircle2 } from 'lucide-react';
 import {
   verifyPreceptorPinDetailed,
+  verifyLeadEducatorPin,
   getStoredPreceptors,
-  getPreceptorPin,
 } from '../utils/storage';
 import { RegisteredPreceptor } from '../types/nursing';
 
@@ -13,6 +13,7 @@ interface PreceptorPinModalProps {
   onSuccess: (preceptor?: RegisteredPreceptor) => void;
   title?: string;
   subtitle?: string;
+  requiredRole?: 'preceptor' | 'lead_educator';
 }
 
 export function PreceptorPinModal({
@@ -21,6 +22,7 @@ export function PreceptorPinModal({
   onSuccess,
   title = 'Preceptor / Mentor Security Authorization',
   subtitle = 'Only authorized preceptors or clinical mentors can sign off competencies and update status to Met.',
+  requiredRole = 'preceptor',
 }: PreceptorPinModalProps) {
   const [pin, setPin] = useState('');
   const [error, setError] = useState<string | null>(null);
@@ -30,11 +32,14 @@ export function PreceptorPinModal({
   if (!isOpen) return null;
 
   const preceptors = getStoredPreceptors();
-  const defaultMasterPin = getPreceptorPin();
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const result = verifyPreceptorPinDetailed(pin);
+    const result =
+      requiredRole === 'lead_educator'
+        ? verifyLeadEducatorPin(pin)
+        : verifyPreceptorPinDetailed(pin);
+
     if (result.valid) {
       setError(null);
       setIdentifiedPreceptor(result.preceptor || null);
@@ -42,9 +47,13 @@ export function PreceptorPinModal({
         setPin('');
         setIdentifiedPreceptor(null);
         onSuccess(result.preceptor);
-      }, 400);
+      }, 350);
     } else {
-      setError('Invalid authorization PIN. Please enter your personal preceptor PIN or institutional code.');
+      setError(
+        requiredRole === 'lead_educator'
+          ? 'Invalid Lead Clinical Educator authorization code. Please check with your program coordinator.'
+          : 'Invalid authorization PIN. Please enter your confidential assigned preceptor PIN or lead educator code.'
+      );
     }
   };
 
@@ -59,11 +68,17 @@ export function PreceptorPinModal({
             </div>
             <div>
               <h3 className="text-sm font-bold">{title}</h3>
+              <p className="text-[10px] text-teal-200 font-sans">
+                {requiredRole === 'lead_educator'
+                  ? 'Restricted to Lead Clinical Educator / Program Director'
+                  : 'Restricted to Assigned Clinical Preceptors & Mentors'}
+              </p>
             </div>
           </div>
           <button
             onClick={onClose}
             className="p-1 text-teal-200 hover:text-white rounded-lg hover:bg-teal-800"
+            aria-label="Close"
           >
             <X className="w-4 h-4" />
           </button>
@@ -76,22 +91,28 @@ export function PreceptorPinModal({
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
             <span className="font-semibold text-slate-800 flex items-center gap-1.5 text-xs">
               <Key className="w-3.5 h-3.5 text-teal-700" />
-              <span>Enter Preceptor / Mentor Authorization PIN:</span>
+              <span>
+                {requiredRole === 'lead_educator'
+                  ? 'Enter Lead Educator Master Passcode / PIN:'
+                  : 'Enter Your Assigned Preceptor PIN:'}
+              </span>
             </span>
             <input
               type="password"
               autoFocus
               maxLength={10}
-              placeholder="e.g. 4182, 7021, 9090..."
+              placeholder="••••"
               value={pin}
               onChange={(e) => {
                 setPin(e.target.value);
                 setError(null);
               }}
-              className="w-full px-3 py-2 text-center text-lg font-mono tracking-widest rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700 font-bold"
+              className="w-full px-3 py-2 text-center text-xl font-mono tracking-widest rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700 font-bold bg-white"
             />
             <p className="text-[10px] text-slate-500 text-center">
-              Enter your individual instructor PIN or master institutional code (<code>{defaultMasterPin}</code>).
+              {requiredRole === 'lead_educator'
+                ? 'Enter the institutional master passcode set in the Instructor Portal.'
+                : 'Enter the individual 4-digit PIN provided to you by your Lead Clinical Educator.'}
             </p>
           </div>
 
@@ -111,7 +132,7 @@ export function PreceptorPinModal({
             </div>
           )}
 
-          {/* Collapsible Registered Preceptors Guide */}
+          {/* Authorized Directory without revealing secrets */}
           <div className="pt-1">
             <button
               type="button"
@@ -120,14 +141,14 @@ export function PreceptorPinModal({
             >
               <Users className="w-3.5 h-3.5" />
               <span>
-                {showDirectory ? 'Hide Preceptor Directory' : `View Authorized Preceptors (${preceptors.length})`}
+                {showDirectory ? 'Hide Preceptor Directory' : `View Authorized Mentors & Preceptors (${preceptors.length})`}
               </span>
             </button>
 
             {showDirectory && (
-              <div className="mt-2 p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] space-y-2 max-h-40 overflow-y-auto">
-                <p className="text-slate-500 italic">
-                  Instructors can manage or add custom PINs in the <strong>Instructor &amp; Cohorts</strong> tab:
+              <div className="mt-2 p-3 bg-slate-50 rounded-xl border border-slate-200 text-[11px] space-y-2 max-h-44 overflow-y-auto">
+                <p className="text-slate-600 text-[10px]">
+                  Only verified institutional staff on this roster have an active PIN. To register a new mentor or reset your PIN, contact the Lead Clinical Educator:
                 </p>
                 <div className="space-y-1.5">
                   {preceptors.map((p) => (
@@ -139,17 +160,12 @@ export function PreceptorPinModal({
                         <div className="font-bold text-slate-800">{p.name} ({p.initials})</div>
                         <div className="text-[10px] text-slate-500">{p.title} · {p.wardDepartment}</div>
                       </div>
-                      <div className="font-mono font-bold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 text-[10px]">
-                        PIN: {p.pin}
+                      <div className="flex items-center gap-1 text-[10px] font-semibold text-teal-800 bg-teal-50 px-2 py-0.5 rounded border border-teal-200/80">
+                        <ShieldCheck className="w-3 h-3 text-teal-600" />
+                        <span>Active</span>
                       </div>
                     </div>
                   ))}
-                  <div className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between text-[10px]">
-                    <span className="font-medium text-slate-700">Master Institutional Backup Code</span>
-                    <span className="font-mono font-bold text-slate-800 bg-slate-100 px-2 py-0.5 rounded">
-                      {defaultMasterPin}
-                    </span>
-                  </div>
                 </div>
               </div>
             )}

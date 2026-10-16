@@ -16,6 +16,8 @@ import {
   ChevronRight,
   CheckCircle2,
   FileText,
+  Share2,
+  Lock,
 } from 'lucide-react';
 import {
   TraineeInformation,
@@ -36,6 +38,8 @@ import {
   saveStoredFinalSignoff,
   saveStoredUserRole,
   saveStoredCohortStudents,
+  saveStoredPreceptors,
+  FULL_15_PRECEPTORS_ROSTER,
   resetStorageToBlank,
   resetStorageToSample,
   UserRole,
@@ -50,6 +54,8 @@ import { OcrScannerNcep } from './components/OcrScannerNcep';
 import { NcepEvidenceVault } from './components/NcepEvidenceVault';
 import { NcepAcademicPrintView } from './components/NcepAcademicPrintView';
 import { UserManualModal } from './components/UserManualModal';
+import { PreceptorPinModal } from './components/PreceptorPinModal';
+import { ShareAccessModal } from './components/ShareAccessModal';
 import { cloudSync } from './utils/cloudSync';
 import { CloudSyncIndicator } from './components/CloudSyncIndicator';
 
@@ -61,13 +67,42 @@ export default function App() {
   const [finalSignoff, setFinalSignoff] = useState<FinalCompetencySignoff>(getStoredFinalSignoff);
   const [userRole, setUserRole] = useState<UserRole>(getStoredUserRole);
   const [cohortStudents, setCohortStudents] = useState<CohortStudentRecord[]>(getStoredCohortStudents);
-  const [currentStudentRosterId, setCurrentStudentRosterId] = useState<string>('student-1');
+  const [currentStudentRosterId, setCurrentStudentRosterId] = useState<string>(() => {
+    const list = getStoredCohortStudents();
+    return list[0]?.id || 'student-1';
+  });
   const [activeTab, setActiveTab] = useState<TabType>('part1');
   const [targetSessionForPart2, setTargetSessionForPart2] = useState<number | null>(null);
   const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState<boolean>(false);
+
+  // Security role restriction & PIN state
+  const [authenticatedPreceptor, setAuthenticatedPreceptor] = useState<RegisteredPreceptor | null>(null);
+  const [isRoleAuthModalOpen, setIsRoleAuthModalOpen] = useState<boolean>(false);
+  const [targetRoleForAuth, setTargetRoleForAuth] = useState<'preceptor' | 'lead_educator'>('preceptor');
+  const [pendingTabAfterAuth, setPendingTabAfterAuth] = useState<TabType | null>(null);
 
   // Flag to avoid echo loop when applying remote updates
   const isRemoteUpdateRef = useRef(false);
+
+  // Check URL parameters for direct role links (e.g. ?role=preceptor or ?role=lead_educator or ?tab=cohort)
+  useEffect(() => {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const roleParam = params.get('role');
+      const tabParam = params.get('tab');
+      if (roleParam === 'preceptor' || roleParam === 'mentor') {
+        setTargetRoleForAuth('preceptor');
+        setIsRoleAuthModalOpen(true);
+      } else if (roleParam === 'lead_educator' || roleParam === 'instructor' || tabParam === 'cohort') {
+        setTargetRoleForAuth('lead_educator');
+        if (tabParam === 'cohort') setPendingTabAfterAuth('cohort');
+        setIsRoleAuthModalOpen(true);
+      }
+    } catch (e) {
+      console.error('URL params parsing error:', e);
+    }
+  }, []);
 
   // Cross-device cloud sync: listen to remote updates from server
   useEffect(() => {
@@ -123,9 +158,16 @@ export default function App() {
       }
     });
 
+    const unsubPreceptors = cloudSync.onPreceptorsUpdated((remotePreceptors) => {
+      if (Array.isArray(remotePreceptors) && remotePreceptors.length > 0) {
+        saveStoredPreceptors(remotePreceptors);
+      }
+    });
+
     return () => {
       unsubStudent();
       unsubCohort();
+      unsubPreceptors();
     };
   }, [currentStudentRosterId, traineeInfo.traineeId]);
 
@@ -164,6 +206,55 @@ export default function App() {
     const isPreceptorRole = userRole === 'preceptor' || userRole === 'lead_educator';
     cloudSync.syncStudent(studentRecord, isPreceptorRole ? 'preceptor' : 'trainee');
   }, [traineeInfo, detailedLogs, finalSignoff, currentStudentRosterId, userRole]);
+
+  // Security role switching & access control handlers
+  const handleRoleSelectChange = (newRole: UserRole) => {
+    if (newRole === 'trainee') {
+      setUserRole('trainee');
+      setAuthenticatedPreceptor(null);
+      if (activeTab === 'cohort') {
+        setActiveTab('part1');
+      }
+    } else if (newRole === 'preceptor') {
+      if (authenticatedPreceptor && userRole === 'preceptor') return;
+      setTargetRoleForAuth('preceptor');
+      setPendingTabAfterAuth(null);
+      setIsRoleAuthModalOpen(true);
+    } else if (newRole === 'lead_educator') {
+      if (authenticatedPreceptor?.role === 'lead_educator' && userRole === 'lead_educator') return;
+      setTargetRoleForAuth('lead_educator');
+      setPendingTabAfterAuth(null);
+      setIsRoleAuthModalOpen(true);
+    }
+  };
+
+  const handleLockRole = () => {
+    setUserRole('trainee');
+    setAuthenticatedPreceptor(null);
+    if (activeTab === 'cohort') {
+      setActiveTab('part1');
+    }
+  };
+
+  const handleRoleAuthSuccess = (preceptor?: RegisteredPreceptor) => {
+    setUserRole(targetRoleForAuth);
+    setAuthenticatedPreceptor(preceptor || null);
+    setIsRoleAuthModalOpen(false);
+    if (pendingTabAfterAuth) {
+      setActiveTab(pendingTabAfterAuth);
+      setPendingTabAfterAuth(null);
+    }
+  };
+
+  const handleTabClick = (tabId: TabType) => {
+    if (tabId === 'cohort' && userRole === 'trainee') {
+      setTargetRoleForAuth('lead_educator');
+      setPendingTabAfterAuth('cohort');
+      setIsRoleAuthModalOpen(true);
+      return;
+    }
+    setActiveTab(tabId);
+  };
 
   // Cohort handlers
   const handleSelectCohortStudent = (student: CohortStudentRecord, targetTab?: TabType) => {
@@ -208,6 +299,37 @@ export default function App() {
     setFinalSignoff(newRecord.finalSignoff);
     setCurrentStudentRosterId(resolvedId);
     setActiveTab('page1');
+  };
+
+  const handleDeleteCohortStudent = (studentId: string) => {
+    setCohortStudents((prev) => {
+      const updated = prev.filter(
+        (s) => s.id !== studentId && s.traineeInfo.traineeId !== studentId
+      );
+      saveStoredCohortStudents(updated);
+      cloudSync.syncCohort(updated);
+
+      if (
+        currentStudentRosterId === studentId ||
+        traineeInfo.traineeId === studentId
+      ) {
+        if (updated.length > 0) {
+          const next = updated[0];
+          setCurrentStudentRosterId(next.id);
+          setTraineeInfo(next.traineeInfo);
+          setDetailedLogs(next.detailedLogs || []);
+          setFinalSignoff(next.finalSignoff);
+        } else {
+          const blank = resetStorageToBlank();
+          setTraineeInfo(blank.traineeInfo);
+          setDetailedLogs(blank.detailedLogs);
+          setFinalSignoff(blank.finalSignoff);
+          setCurrentStudentRosterId('');
+        }
+      }
+
+      return updated;
+    });
   };
 
   const handleImportStudentDossier = (importedRecord: CohortStudentRecord) => {
@@ -283,7 +405,7 @@ export default function App() {
     const today = new Date().toISOString().slice(0, 10);
     const effectiveName = preceptor
       ? preceptor.name
-      : traineeInfo.assignedClinicalPreceptor || 'Sister Almaz Tefera, RN, MSc';
+      : traineeInfo.assignedClinicalPreceptor || 'Abaynesh Mekonnen';
     const effectiveInitials = preceptor
       ? preceptor.initials
       : effectiveName
@@ -292,7 +414,7 @@ export default function App() {
           .map((w: string) => w[0])
           .join('')
           .slice(0, 3)
-          .toUpperCase() || 'AT';
+          .toUpperCase() || 'AM';
 
     const defaultComment = preceptor
       ? `Competency demonstrated and validated by ${preceptor.name} (${preceptor.title} · ${preceptor.wardDepartment}).`
@@ -500,18 +622,41 @@ export default function App() {
               <span className="hidden sm:inline text-teal-300 font-medium">
                 CORE COMPETENCY 1: CLINICAL JUDGMENT AND PRIORITIZATION
               </span>
-              <div className="flex items-center gap-1.5">
-                <span className="text-teal-400 font-medium">Role:</span>
-                <select
-                  value={userRole}
-                  onChange={(e) => setUserRole(e.target.value as UserRole)}
-                  className="bg-teal-900 text-teal-100 border border-teal-700/80 rounded px-1.5 py-0.5 text-[11px] cursor-pointer"
-                >
-                  <option value="trainee">Trainee ({traineeInfo.traineeName.split(' ')[0]})</option>
-                  <option value="preceptor">Clinical Preceptor / Mentor</option>
-                  <option value="lead_educator">Lead Clinical Educator</option>
-                </select>
-              </div>
+              {userRole !== 'trainee' ? (
+                <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-1.5 bg-teal-900/90 border border-teal-700/90 text-teal-100 px-2 py-0.5 rounded text-[11px]">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                    <span>
+                      {userRole === 'lead_educator' ? 'Lead Educator' : 'Preceptor'}:{' '}
+                      <strong className="text-white">
+                        {authenticatedPreceptor ? authenticatedPreceptor.name : 'Authorized Staff'}
+                      </strong>
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleLockRole}
+                    className="inline-flex items-center gap-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-200 border border-amber-400/40 px-2 py-0.5 rounded text-[11px] font-semibold transition-colors"
+                    title="Lock preceptor access and return to Trainee mode"
+                  >
+                    <Lock className="w-3 h-3 text-amber-300" />
+                    <span>Lock / Return</span>
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-teal-400 font-medium">Role:</span>
+                  <select
+                    value={userRole}
+                    onChange={(e) => handleRoleSelectChange(e.target.value as UserRole)}
+                    className="bg-teal-900 text-teal-100 border border-teal-700/80 rounded px-1.5 py-0.5 text-[11px] cursor-pointer"
+                  >
+                    <option value="trainee">Trainee ({traineeInfo.traineeName.split(' ')[0] || 'Student'})</option>
+                    <option value="preceptor">🔒 Clinical Preceptor (PIN)</option>
+                    <option value="lead_educator">🔒 Lead Clinical Educator (PIN)</option>
+                  </select>
+                </div>
+              )}
             </div>
           </div>
 
@@ -543,6 +688,16 @@ export default function App() {
                 onForceSync={handleForceSync}
                 userRole={userRole}
               />
+
+              <button
+                type="button"
+                onClick={() => setIsShareModalOpen(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-950 bg-teal-100/90 hover:bg-teal-200 border border-teal-300/80 rounded-xl transition-colors shadow-2xs"
+                title="Share Links & Access Permissions Guide"
+              >
+                <Share2 className="w-3.5 h-3.5 text-teal-800" />
+                <span>Share Links</span>
+              </button>
 
               <button
                 type="button"
@@ -609,7 +764,7 @@ export default function App() {
                 {
                   id: 'cohort',
                   label: 'Instructor & Cohorts',
-                  badge: `${cohortStudents.length} Students`,
+                  badge: userRole === 'trainee' ? '🔒 Restricted' : `${cohortStudents.length} Students`,
                 },
                 { id: 'ocr', label: 'AI OCR Soft Copy Digitizer' },
                 {
@@ -622,7 +777,7 @@ export default function App() {
                 return (
                   <button
                     key={tab.id}
-                    onClick={() => setActiveTab(tab.id as TabType)}
+                    onClick={() => handleTabClick(tab.id as TabType)}
                     className={`py-2.5 text-xs font-medium border-b-2 whitespace-nowrap transition-colors flex items-center gap-1.5 ${
                       isActive
                         ? 'border-teal-700 text-teal-900 font-semibold'
@@ -702,8 +857,14 @@ export default function App() {
               currentStudentId={traineeInfo.traineeId}
               onSelectStudent={handleSelectCohortStudent}
               onAddStudent={handleAddCohortStudent}
+              onDeleteStudent={handleDeleteCohortStudent}
               onImportStudentDossier={handleImportStudentDossier}
               onImportMultipleStudentDossiers={handleImportMultipleStudentDossiers}
+              userRole={userRole}
+              onRequireLeadEducatorAuth={() => {
+                setTargetRoleForAuth('lead_educator');
+                setIsRoleAuthModalOpen(true);
+              }}
             />
           )}
 
@@ -741,6 +902,33 @@ export default function App() {
       <UserManualModal
         isOpen={isManualModalOpen}
         onClose={() => setIsManualModalOpen(false)}
+      />
+
+      {/* Share Links & Access Restriction Guide Modal */}
+      <ShareAccessModal
+        isOpen={isShareModalOpen}
+        onClose={() => setIsShareModalOpen(false)}
+      />
+
+      {/* Security Role Authorization Modal for Preceptors & Lead Educators */}
+      <PreceptorPinModal
+        isOpen={isRoleAuthModalOpen}
+        onClose={() => {
+          setIsRoleAuthModalOpen(false);
+          setPendingTabAfterAuth(null);
+        }}
+        onSuccess={handleRoleAuthSuccess}
+        requiredRole={targetRoleForAuth}
+        title={
+          targetRoleForAuth === 'lead_educator'
+            ? 'Lead Clinical Educator Master Authorization'
+            : 'Clinical Preceptor / Mentor PIN Authorization'
+        }
+        subtitle={
+          targetRoleForAuth === 'lead_educator'
+            ? 'Access to the Instructor & Cohorts portal is restricted to Lead Clinical Educators. Enter the institutional master passcode.'
+            : 'Access to Preceptor Mode is restricted to assigned hospital mentors. Enter your confidential 4-digit PIN.'
+        }
       />
     </div>
   );

@@ -28,6 +28,7 @@ import { NCEP_SESSIONS_DEFINITIONS } from '../data/ncepData';
 import { SignaturePad } from './SignaturePad';
 import { EvidenceAttachmentModal } from './EvidenceAttachmentModal';
 import { PreceptorPinModal } from './PreceptorPinModal';
+import { getStoredPreceptors } from '../utils/storage';
 
 interface PartIIDetailedLogSheetsProps {
   logs: DetailedActivityLogSheet[];
@@ -67,7 +68,7 @@ export function PartIIDetailedLogSheets({
   const [signingLog, setSigningLog] = useState<DetailedActivityLogSheet | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingLogToSign, setPendingLogToSign] = useState<DetailedActivityLogSheet | null>(null);
-  const [preceptorName, setPreceptorName] = useState('Sister Almaz Tesfaye, RN, MSc Clinical Nursing');
+  const [preceptorName, setPreceptorName] = useState('Sister Almaz Tefera, RN, MSc');
   const [preceptorInitials, setPreceptorInitials] = useState('AT');
   const [competencyDemonstrated, setCompetencyDemonstrated] = useState<CompetencyRating>('Satisfactory');
   const [preceptorComments, setPreceptorComments] = useState(
@@ -753,10 +754,25 @@ export function PartIIDetailedLogSheets({
                   </label>
                   <input
                     type="text"
+                    list="registered-preceptors-datalist-part2"
                     value={preceptorName}
-                    onChange={(e) => setPreceptorName(e.target.value)}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setPreceptorName(val);
+                      const matched = getStoredPreceptors().find((p) => p.name === val);
+                      if (matched) {
+                        setPreceptorInitials(matched.initials);
+                      }
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold"
                   />
+                  <datalist id="registered-preceptors-datalist-part2">
+                    {getStoredPreceptors().map((p) => (
+                      <option key={p.id} value={p.name}>
+                        {p.title} ({p.wardDepartment})
+                      </option>
+                    ))}
+                  </datalist>
                 </div>
                 <div>
                   <label className="block font-bold text-slate-800 mb-1">

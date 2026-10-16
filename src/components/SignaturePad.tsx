@@ -164,14 +164,14 @@ export function SignaturePad({ onSave, onCancel, preceptorName }: SignaturePadPr
               type="text"
               value={typedName}
               onChange={(e) => setTypedName(e.target.value)}
-              placeholder="e.g. Sister Almaz Tesfaye, RN, MSc"
+              placeholder="e.g. Sister Almaz Tefera, RN, MSc"
               className="w-full px-3 py-2 text-sm rounded-lg border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-600 focus:border-transparent"
             />
           </div>
           <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl text-center">
             <p className="text-xs text-slate-500 mb-2">Signature Preview:</p>
             <div className="font-serif italic text-2xl text-blue-900 tracking-wide py-2">
-              {typedName || 'Sister Almaz Tesfaye'}
+              {typedName || 'Sister Almaz Tefera'}
             </div>
             <div className="w-48 h-0.5 bg-blue-900/30 mx-auto mt-1" />
           </div>

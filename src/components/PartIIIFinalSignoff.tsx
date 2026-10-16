@@ -14,11 +14,12 @@ import {
   TraineeInformation,
   DetailedActivityLogSheet,
   FinalCompetencySignoff,
+  RegisteredPreceptor,
 } from '../types/nursing';
 import { NCEP_SESSIONS_DEFINITIONS } from '../data/ncepData';
 import { SignaturePad } from './SignaturePad';
 import { PreceptorPinModal } from './PreceptorPinModal';
-import { generateNcepVerificationHash } from '../utils/storage';
+import { generateNcepVerificationHash, getStoredPreceptors } from '../utils/storage';
 
 interface PartIIIFinalSignoffProps {
   traineeInfo: TraineeInformation;
@@ -35,8 +36,11 @@ export function PartIIIFinalSignoff({
   onUpdateFinalSignoff,
   userRole,
 }: PartIIIFinalSignoffProps) {
+  const registeredLeadEducators = getStoredPreceptors().filter((p) => p.role === 'lead_educator');
+  const defaultLeadName = registeredLeadEducators[0]?.name || 'Mr. Yohannes Ayalew';
+
   const [leadEducatorName, setLeadEducatorName] = useState(
-    finalSignoff.leadEducatorName || 'Dr. Berhanu Mengiste, PhD, RN'
+    finalSignoff.leadEducatorName || defaultLeadName
   );
   const [showSigPad, setShowSigPad] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
@@ -235,10 +239,19 @@ export function PartIIIFinalSignoff({
               </label>
               <input
                 type="text"
+                list="registered-lead-educators-list"
                 value={leadEducatorName}
                 onChange={(e) => setLeadEducatorName(e.target.value)}
+                placeholder={defaultLeadName}
                 className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold"
               />
+              <datalist id="registered-lead-educators-list">
+                {registeredLeadEducators.map((p) => (
+                  <option key={p.id} value={p.name}>
+                    {p.title} ({p.wardDepartment})
+                  </option>
+                ))}
+              </datalist>
             </div>
             <div>
               <label className="block font-bold text-slate-700 mb-1">• Date:</label>
@@ -320,7 +333,8 @@ export function PartIIIFinalSignoff({
       <PreceptorPinModal
         isOpen={isPinModalOpen}
         onClose={() => setIsPinModalOpen(false)}
-        onSuccess={(preceptor) => {
+        requiredRole="lead_educator"
+        onSuccess={(preceptor?: RegisteredPreceptor) => {
           setIsPinModalOpen(false);
           if (preceptor) {
             setLeadEducatorName(preceptor.name);

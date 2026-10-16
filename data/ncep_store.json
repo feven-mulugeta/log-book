@@ -1,199 +1,1087 @@
 {
   "cohortStudents": [
     {
-      "id": "student-import-abdisa-052",
+      "id": "student-roster-NCEP-052-26-1792133226450-0",
       "traineeInfo": {
-        "traineeName": "Abdisa Beyene Gutema NCEP/052/26",
-        "traineeId": "NCEP-2026-100",
+        "traineeName": "Abdisa Beyene Gutema",
+        "traineeId": "NCEP-052-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
         "clinicalDepartmentWard": "Medical ICU",
-        "assignedClinicalPreceptor": "Sister Almaz Tefera, RN, MSc",
-        "trainingPeriodFrom": "",
-        "trainingPeriodTo": ""
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
       },
       "detailedLogs": [],
       "finalSignoff": {
         "isCertified": false,
-        "leadEducatorName": "",
+        "leadEducatorName": "Mr. Yohannes Ayalew",
         "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
       },
-      "updatedAt": "2026-10-14T07:23:53.437Z"
+      "updatedAt": "2026-10-16T06:58:21.524Z"
     },
     {
-      "id": "student-1",
+      "id": "student-roster-NCEP-030-26-1792134154132-0",
       "traineeInfo": {
-        "traineeName": "Feven Mulugeta",
-        "traineeId": "AAU-NS-2024-0419",
-        "clinicalDepartmentWard": "Surgical Inpatient Ward 4B / Acute Care Unit",
-        "assignedClinicalPreceptor": "Sister Almaz Tesfaye, RN, MSc Clinical Nursing",
+        "traineeName": "Abel Gatew Cherkos",
+        "traineeId": "NCEP-030-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
         "trainingPeriodFrom": "2026-08-15",
         "trainingPeriodTo": "2026-11-20"
       },
-      "detailedLogs": [
-        {
-          "id": "ncep-log-01",
-          "sessionNumber": 1,
-          "sessionTitle": "Comprehensive Assessment by History Taking & Physical Examination",
-          "subCompetencyId": "sub_comp_1",
-          "subCompetencyTitle": "Sub-Competency 1: Perform Patient Assessment",
-          "dateOfActivity": "2026-08-22",
-          "durationHours": 4,
-          "clinicalSettingWard": "Surgical Inpatient Ward 4B",
-          "activityDescription": "Conducted two complete head-to-toe comprehensive assessments on adult inpatients. Patient A: 58-year-old male post-laparoscopic cholecystectomy day 2. Conducted systematic interview covering past medical history (hypertension), current medications, pain assessment (PQRST), and full physical exam including surgical port inspection. Patient B: 44-year-old female admitted for acute abdominal pain awaiting diagnostic imaging.",
-          "reflectiveNotesLessonsLearned": "What went well: Developed comfortable rapport with both patients and maintained privacy using bedside curtains. Validated subjective pain complaints against objective findings (guarding, vital signs). Challenge: Balancing the detailed questioning without causing patient fatigue; learned to group physical examination steps smoothly to avoid unnecessary repositioning.",
-          "attachments": [
-            {
-              "id": "att-session-1",
-              "name": "Comprehensive_History_Physical_Assessment_Sheet.svg",
-              "type": "assessment_form",
-              "dataUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"600\" height=\"420\" viewBox=\"0 0 600 420\"><rect width=\"600\" height=\"420\" fill=\"%23f8fafc\"/><rect x=\"20\" y=\"20\" width=\"560\" height=\"380\" rx=\"8\" fill=\"%23ffffff\" stroke=\"%23cbd5e1\" stroke-width=\"2\"/><text x=\"40\" y=\"55\" font-family=\"Arial\" font-size=\"16\" font-weight=\"bold\" fill=\"%230f172a\">COMPREHENSIVE PATIENT ASSESSMENT (SESSION 1)</text><text x=\"40\" y=\"80\" font-family=\"Arial\" font-size=\"11\" fill=\"%2364748b\">Tikur Anbessa Specialized Hospital | Surgical Ward 4B</text><line x1=\"40\" y1=\"95\" x2=\"560\" y2=\"95\" stroke=\"%23e2e8f0\" stroke-width=\"1.5\"/><text x=\"40\" y=\"125\" font-family=\"Arial\" font-size=\"12\" font-weight=\"bold\" fill=\"%231e293b\">Patient 1: 58M Post-Cholecystectomy Day 2 (De-identified)</text><text x=\"40\" y=\"150\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">History: Pain 5/10 right upper quadrant, nausea controlled with Ondansetron.</text><text x=\"40\" y=\"175\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">Physical Exam: Abdomen soft, hypoactive bowel sounds, midline dressing intact.</text><text x=\"40\" y=\"200\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">Vitals: BP 124/78, HR 78 bpm, RR 18, Temp 36.8°C, SpO2 97% on room air.</text><line x1=\"40\" y1=\"220\" x2=\"560\" y2=\"220\" stroke=\"%23e2e8f0\" stroke-width=\"1.5\"/><text x=\"40\" y=\"245\" font-family=\"Arial\" font-size=\"12\" font-weight=\"bold\" fill=\"%231e293b\">Patient 2: 44F Acute Appendicitis Pre-op Assessment</text><text x=\"40\" y=\"270\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">Findings: Rebound tenderness McBurney point, localized guarding, NPO status verified.</text><rect x=\"40\" y=\"305\" width=\"240\" height=\"70\" rx=\"6\" fill=\"%23f0fdf4\" stroke=\"%2386efac\"/><text x=\"55\" y=\"330\" font-family=\"Arial\" font-size=\"11\" font-weight=\"bold\" fill=\"%23166534\">PRECEPTOR VERIFIED [AT]</text><text x=\"55\" y=\"348\" font-family=\"Arial\" font-size=\"10\" fill=\"%2315803d\">Sr. Almaz Tesfaye, RN, MSc</text><text x=\"55\" y=\"362\" font-family=\"Arial\" font-size=\"9\" fill=\"%2316a34a\">Competency: Satisfactory | 2026-08-22</text></svg>",
-              "notes": "Two complete H&P records verified by ward sister.",
-              "uploadedAt": "2026-08-22T14:30:00.000Z",
-              "sizeBytes": 15400
-            }
-          ],
-          "preceptorSignoff": {
-            "isSigned": true,
-            "preceptorName": "Sister Almaz Tesfaye, RN, MSc Clinical Nursing",
-            "preceptorInitials": "AT",
-            "signatureDataUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"60\" viewBox=\"0 0 200 60\"><path d=\"M 20 40 Q 50 10, 80 35 T 140 25 T 180 35\" fill=\"none\" stroke=\"%231e3a8a\" stroke-width=\"2.5\"/><text x=\"30\" y=\"52\" font-family=\"cursive\" font-size=\"12\" fill=\"%231e3a8a\">Almaz Tesfaye, RN</text></svg>",
-            "dateSigned": "2026-08-22",
-            "competencyDemonstrated": "Satisfactory",
-            "comments": "Thorough systematic assessment technique. Excellent attention to surgical site inspection and patient dignity."
-          },
-          "status": "Met",
-          "source": "manual",
-          "createdAt": "2026-08-22T15:00:00.000Z"
-        },
-        {
-          "id": "ncep-log-02",
-          "sessionNumber": 2,
-          "sessionTitle": "Validating Data Accuracy (Subjective–Objective Congruence)",
-          "subCompetencyId": "sub_comp_1",
-          "subCompetencyTitle": "Sub-Competency 1: Perform Patient Assessment",
-          "dateOfActivity": "2026-08-26",
-          "durationHours": 3,
-          "clinicalSettingWard": "Surgical Inpatient Ward 4B",
-          "activityDescription": "Performed chart audit and bedside verification for two ward patients. Paired subjective statements with objective findings: Patient 1 reported feeling \"short of breath when sitting up\"; objective findings showed RR 24, shallow chest expansion, SpO2 93% on room air, bibasilar crackles on auscultation. Patient 2 stated pain was \"mild 2/10\" but exhibited grimacing during transfer, heart rate 94 bpm, and abdominal muscle tensing.",
-          "reflectiveNotesLessonsLearned": "Learned that subjective statements do not always tell the full story due to stoicism or fear of analgesics. Objective validation is essential before confirming patient stability.",
-          "attachments": [],
-          "preceptorSignoff": {
-            "isSigned": true,
-            "preceptorName": "Sister Almaz Tesfaye, RN, MSc Clinical Nursing",
-            "preceptorInitials": "AT",
-            "signatureDataUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"60\" viewBox=\"0 0 200 60\"><path d=\"M 20 40 Q 50 10, 80 35 T 140 25 T 180 35\" fill=\"none\" stroke=\"%231e3a8a\" stroke-width=\"2.5\"/><text x=\"30\" y=\"52\" font-family=\"cursive\" font-size=\"12\" fill=\"%231e3a8a\">Almaz Tesfaye, RN</text></svg>",
-            "dateSigned": "2026-08-26",
-            "competencyDemonstrated": "Satisfactory",
-            "comments": "Sound clinical critical thinking demonstrated when identifying non-verbal pain cues contradictory to stated score."
-          },
-          "status": "Met",
-          "source": "manual",
-          "createdAt": "2026-08-26T14:15:00.000Z"
-        },
-        {
-          "id": "ncep-log-03",
-          "sessionNumber": 3,
-          "sessionTitle": "Identifying & Documenting Normal and Abnormal Findings",
-          "subCompetencyId": "sub_comp_1",
-          "subCompetencyTitle": "Sub-Competency 1: Perform Patient Assessment",
-          "dateOfActivity": "2026-08-29",
-          "durationHours": 4,
-          "clinicalSettingWard": "Surgical Inpatient Ward 4B",
-          "activityDescription": "Composed standard progress notes using DAR (Data, Action, Response) format for three assigned ward patients. Patient 1: Post-appendectomy day 1; Patient 2: Conservative management of acute pancreatitis; Patient 3: Post-debridement wound with negative pressure therapy. Addressed vital signs, pain ratings, IV infusion rates, surgical dressings, and intake/output balance.",
-          "reflectiveNotesLessonsLearned": "Ensured documentation complied with hospital legal standards: objective phrasing without ambiguous abbreviations, timely entry, and clear action-response loops.",
-          "attachments": [],
-          "preceptorSignoff": {
-            "isSigned": true,
-            "preceptorName": "Sister Almaz Tesfaye, RN, MSc Clinical Nursing",
-            "preceptorInitials": "AT",
-            "signatureDataUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"60\" viewBox=\"0 0 200 60\"><path d=\"M 20 40 Q 50 10, 80 35 T 140 25 T 180 35\" fill=\"none\" stroke=\"%231e3a8a\" stroke-width=\"2.5\"/><text x=\"30\" y=\"52\" font-family=\"cursive\" font-size=\"12\" fill=\"%231e3a8a\">Almaz Tesfaye, RN</text></svg>",
-            "dateSigned": "2026-08-29",
-            "competencyDemonstrated": "Satisfactory",
-            "comments": "Documentation is clear, factual, and strictly follows unit legal formatting standards."
-          },
-          "status": "Met",
-          "source": "manual",
-          "createdAt": "2026-08-29T16:00:00.000Z"
-        },
-        {
-          "id": "ncep-log-04",
-          "sessionNumber": 4,
-          "sessionTitle": "Interpreting Early Warning Signs (Danger Signs)",
-          "subCompetencyId": "sub_comp_1",
-          "subCompetencyTitle": "Sub-Competency 1: Perform Patient Assessment",
-          "dateOfActivity": "2026-09-02",
-          "durationHours": 6,
-          "clinicalSettingWard": "Surgical Inpatient Ward 4B",
-          "activityDescription": "Calculated National Early Warning Score (NEWS) for six assigned surgical patients at 08:00, 12:00, and 14:00. Identified one patient with score escalation from 2 to 5 (tachypnea RR 26, HR 108, BP 98/60, Temp 38.3°C). Documented threshold breach and initiated immediate escalation to medical team within 15 minutes as per protocol.",
-          "reflectiveNotesLessonsLearned": "Calculating scores systematically allowed us to catch early sepsis before overt hemodynamic collapse occurred. What to improve: Prepare baseline vitals for quick verbal handoff when dialing the doctor.",
-          "attachments": [
-            {
-              "id": "att-session-4",
-              "name": "NEWS_Early_Warning_Escalation_Sheet.svg",
-              "type": "ews_sheet",
-              "dataUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"600\" height=\"420\" viewBox=\"0 0 600 420\"><rect width=\"600\" height=\"420\" fill=\"%23f8fafc\"/><rect x=\"20\" y=\"20\" width=\"560\" height=\"380\" rx=\"8\" fill=\"%23ffffff\" stroke=\"%23cbd5e1\" stroke-width=\"2\"/><text x=\"40\" y=\"55\" font-family=\"Arial\" font-size=\"16\" font-weight=\"bold\" fill=\"%230f172a\">EARLY WARNING SCORE (EWS) AUDIT (SESSION 4)</text><text x=\"40\" y=\"80\" font-family=\"Arial\" font-size=\"11\" fill=\"%2364748b\">Ward 4B Inpatient Shift Audit | Total Patients Audited: 6</text><line x1=\"40\" y1=\"95\" x2=\"560\" y2=\"95\" stroke=\"%23e2e8f0\" stroke-width=\"1.5\"/><text x=\"40\" y=\"125\" font-family=\"Arial\" font-size=\"12\" font-weight=\"bold\" fill=\"%231e293b\">Identified Escalation Case: Bed 14 (62M Post-op Laparotomy)</text><text x=\"40\" y=\"150\" font-family=\"Arial\" font-size=\"11\" fill=\"%23b91c1c\">EWS Score: 5 (Medium Risk - RR 26, HR 108, BP 98/60, Temp 38.3°C)</text><text x=\"40\" y=\"175\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">Escalation Action Taken: Promptly reported to Duty Medical Officer within 15 mins.</text><text x=\"40\" y=\"200\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">Interventions: Commenced 2L O2 nasal cannula, 500mL crystalloid bolus, blood cultures sent.</text><rect x=\"40\" y=\"305\" width=\"240\" height=\"70\" rx=\"6\" fill=\"%23f0fdf4\" stroke=\"%2386efac\"/><text x=\"55\" y=\"330\" font-family=\"Arial\" font-size=\"11\" font-weight=\"bold\" fill=\"%23166534\">PRECEPTOR VERIFIED [AT]</text><text x=\"55\" y=\"348\" font-family=\"Arial\" font-size=\"10\" fill=\"%2315803d\">Sr. Almaz Tesfaye, RN, MSc</text><text x=\"55\" y=\"362\" font-family=\"Arial\" font-size=\"9\" fill=\"%2316a34a\">Competency: Satisfactory | 2026-09-02</text></svg>",
-              "notes": "Escalation chart for Bed 14 demonstrating early sepsis intervention.",
-              "uploadedAt": "2026-09-02T16:00:00.000Z",
-              "sizeBytes": 14800
-            }
-          ],
-          "preceptorSignoff": {
-            "isSigned": true,
-            "preceptorName": "Sister Almaz Tesfaye, RN, MSc Clinical Nursing",
-            "preceptorInitials": "AT",
-            "signatureDataUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"60\" viewBox=\"0 0 200 60\"><path d=\"M 20 40 Q 50 10, 80 35 T 140 25 T 180 35\" fill=\"none\" stroke=\"%231e3a8a\" stroke-width=\"2.5\"/><text x=\"30\" y=\"52\" font-family=\"cursive\" font-size=\"12\" fill=\"%231e3a8a\">Almaz Tesfaye, RN</text></svg>",
-            "dateSigned": "2026-09-02",
-            "competencyDemonstrated": "Satisfactory",
-            "comments": "Decisive action during the NEWS trigger prevented worsening septic shock. Commendable escalation."
-          },
-          "status": "Met",
-          "source": "manual",
-          "createdAt": "2026-09-02T16:45:00.000Z"
-        },
-        {
-          "id": "ncep-log-11",
-          "sessionNumber": 11,
-          "sessionTitle": "Differentiating Early Warning Signs & Initiating Timely Interventions",
-          "subCompetencyId": "sub_comp_4",
-          "subCompetencyTitle": "Sub-Competency 4: Prevent, Detect and Respond to Complications",
-          "dateOfActivity": "2026-09-24",
-          "durationHours": 5,
-          "clinicalSettingWard": "Surgical Inpatient Ward 4B",
-          "activityDescription": "Constructed and delivered two structured SBAR (Situation, Background, Assessment, Recommendation) escalation reports to preceptor and surgical registrar for patients exhibiting acute changes. Case 1: Suspected pulmonary embolism (hypoxia SpO2 91%, tachycardia, pleuritic chest pain in immobilized orthopedic patient). Case 2: Acute urinary retention post-spinal anesthesia.",
-          "reflectiveNotesLessonsLearned": "SBAR structured communication provided an unambiguous framework that eliminated rambling and got immediate physician response. Felt much more confident presenting concise objective data.",
-          "attachments": [
-            {
-              "id": "att-session-11",
-              "name": "SBAR_Escalation_Record_Bed8.svg",
-              "type": "sbar_note",
-              "dataUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"600\" height=\"420\" viewBox=\"0 0 600 420\"><rect width=\"600\" height=\"420\" fill=\"%23f8fafc\"/><rect x=\"20\" y=\"20\" width=\"560\" height=\"380\" rx=\"8\" fill=\"%23ffffff\" stroke=\"%23cbd5e1\" stroke-width=\"2\"/><text x=\"40\" y=\"55\" font-family=\"Arial\" font-size=\"16\" font-weight=\"bold\" fill=\"%230f172a\">SBAR ESCALATION REPORT (SESSION 11)</text><line x1=\"40\" y1=\"80\" x2=\"560\" y2=\"80\" stroke=\"%23e2e8f0\" stroke-width=\"1.5\"/><text x=\"40\" y=\"110\" font-family=\"Arial\" font-size=\"11\" font-weight=\"bold\" fill=\"%230f172a\">S (Situation):</text><text x=\"140\" y=\"110\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">Bed 8 patient reporting acute chest tightness and dyspnea.</text><text x=\"40\" y=\"140\" font-family=\"Arial\" font-size=\"11\" font-weight=\"bold\" fill=\"%230f172a\">B (Background):</text><text x=\"140\" y=\"140\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">68F Day 3 post ORIF femur, immobilized with bilateral TED hose.</text><text x=\"40\" y=\"170\" font-family=\"Arial\" font-size=\"11\" font-weight=\"bold\" fill=\"%230f172a\">A (Assessment):</text><text x=\"140\" y=\"170\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">NEWS score 6. HR 116 sinus tach, RR 28, SpO2 91% on room air.</text><text x=\"40\" y=\"200\" font-family=\"Arial\" font-size=\"11\" font-weight=\"bold\" fill=\"%230f172a\">R (Recommendation):</text><text x=\"160\" y=\"200\" font-family=\"Arial\" font-size=\"11\" fill=\"%23334155\">Urgent medical review, 12-lead ECG, CT pulmonary angiogram.</text><rect x=\"40\" y=\"305\" width=\"240\" height=\"70\" rx=\"6\" fill=\"%23f0fdf4\" stroke=\"%2386efac\"/><text x=\"55\" y=\"330\" font-family=\"Arial\" font-size=\"11\" font-weight=\"bold\" fill=\"%23166534\">PRECEPTOR VERIFIED [AT]</text><text x=\"55\" y=\"348\" font-family=\"Arial\" font-size=\"10\" fill=\"%2315803d\">Sr. Almaz Tesfaye, RN, MSc</text><text x=\"55\" y=\"362\" font-family=\"Arial\" font-size=\"9\" fill=\"%2316a34a\">Competency: Satisfactory | 2026-09-24</text></svg>",
-              "notes": "SBAR escalation sheet delivered to preceptor and registrar.",
-              "uploadedAt": "2026-09-24T15:30:00.000Z",
-              "sizeBytes": 16100
-            }
-          ],
-          "preceptorSignoff": {
-            "isSigned": true,
-            "preceptorName": "Sister Almaz Tesfaye, RN, MSc Clinical Nursing",
-            "preceptorInitials": "AT",
-            "signatureDataUrl": "data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"200\" height=\"60\" viewBox=\"0 0 200 60\"><path d=\"M 20 40 Q 50 10, 80 35 T 140 25 T 180 35\" fill=\"none\" stroke=\"%231e3a8a\" stroke-width=\"2.5\"/><text x=\"30\" y=\"52\" font-family=\"cursive\" font-size=\"12\" fill=\"%231e3a8a\">Almaz Tesfaye, RN</text></svg>",
-            "dateSigned": "2026-09-24",
-            "competencyDemonstrated": "Satisfactory",
-            "comments": "Clear, articulate SBAR presentation with appropriate recommendations."
-          },
-          "status": "Met",
-          "source": "manual",
-          "createdAt": "2026-09-24T16:00:00.000Z"
-        }
-      ],
+      "detailedLogs": [],
       "finalSignoff": {
         "isCertified": false,
-        "leadEducatorName": "Dr. Berhanu Mengiste, PhD, RN",
-        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator",
-        "verificationHash": "AAU-NCEP-CC1-89F2-411B-CERT"
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
       },
-      "updatedAt": "2026-10-14T06:37:10.768Z"
+      "updatedAt": "2026-10-16T07:02:58.278Z"
+    },
+    {
+      "id": "student-roster-NCEP-021-26-1792134191143-0",
+      "traineeInfo": {
+        "traineeName": "Abnet Tsegaye Tolla",
+        "traineeId": "NCEP-021-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:03:22.403Z"
+    },
+    {
+      "id": "student-roster-NCEP-042-26-1792134220806-0",
+      "traineeInfo": {
+        "traineeName": "Amanuel Yadeta Ereti",
+        "traineeId": "NCEP-042-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:03:51.222Z"
+    },
+    {
+      "id": "student-roster-NCEP-015-26-1792134243203-0",
+      "traineeInfo": {
+        "traineeName": "Ana Mohammed Aliyi",
+        "traineeId": "NCEP-015-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:04:15.033Z"
+    },
+    {
+      "id": "student-roster-NCEP-020-26-1792134259560-0",
+      "traineeInfo": {
+        "traineeName": "Azene Wondayehu",
+        "traineeId": "NCEP-020-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:04:31.678Z"
+    },
+    {
+      "id": "student-roster-NCEP-044-26-1792134279163-0",
+      "traineeInfo": {
+        "traineeName": "Bedasa Asefa Workineh",
+        "traineeId": "NCEP-044-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:04:49.166Z"
+    },
+    {
+      "id": "student-roster-NCEP-055-26-1792134343747-0",
+      "traineeInfo": {
+        "traineeName": "Bekele Guta Geda",
+        "traineeId": "NCEP-055-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:05:54.476Z"
+    },
+    {
+      "id": "student-roster-NCEP-09-26-1792134367748-0",
+      "traineeInfo": {
+        "traineeName": "Christian Bedlu Merga",
+        "traineeId": "NCEP-09-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:06:19.246Z"
+    },
+    {
+      "id": "student-roster-NCEP-043-26-1792134382652-0",
+      "traineeInfo": {
+        "traineeName": "Dame Takalign Gashe",
+        "traineeId": "NCEP-043-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:06:34.716Z"
+    },
+    {
+      "id": "student-roster-NCEP-046-26-1792134405510-0",
+      "traineeInfo": {
+        "traineeName": "Dawit Tigabu Amare",
+        "traineeId": "NCEP-046-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:06:55.382Z"
+    },
+    {
+      "id": "student-roster-NCEP-040-26-1792134427205-0",
+      "traineeInfo": {
+        "traineeName": "Engedawerk Tilahun Fentie",
+        "traineeId": "NCEP-040-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:07:22.457Z"
+    },
+    {
+      "id": "student-roster-NCEP-049-26-1792134451755-0",
+      "traineeInfo": {
+        "traineeName": "Gebeyaw Alemu Fente",
+        "traineeId": "NCEP-049-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:07:43.498Z"
+    },
+    {
+      "id": "student-roster-NCEP-038-26-1792134468287-0",
+      "traineeInfo": {
+        "traineeName": "Gentelman Duri Kedir",
+        "traineeId": "NCEP-038-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:08:00.789Z"
+    },
+    {
+      "id": "student-roster-NCEP-065-26-1792134487649-0",
+      "traineeInfo": {
+        "traineeName": "Gudina Hambisa Nemera",
+        "traineeId": "NCEP-065-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:08:18.647Z"
+    },
+    {
+      "id": "student-roster-NECP-018-26-1792134506644-0",
+      "traineeInfo": {
+        "traineeName": "Gudisa Gemsisa Bekele",
+        "traineeId": "NECP-018-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:08:37.256Z"
+    },
+    {
+      "id": "student-roster-NCEP-057-26-1792134524002-0",
+      "traineeInfo": {
+        "traineeName": "Gurmessa Dessale Assegie",
+        "traineeId": "NCEP-057-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:08:56.169Z"
+    },
+    {
+      "id": "student-roster-NCEP -06-26-1792134551709-0",
+      "traineeInfo": {
+        "traineeName": "Habtemariam Mulat Alemu",
+        "traineeId": "NCEP -06-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:09:27.043Z"
+    },
+    {
+      "id": "student-roster-NCEP-041-26-1792134570032-0",
+      "traineeInfo": {
+        "traineeName": "Haile Mekonnen Asayehegn",
+        "traineeId": "NCEP-041-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:09:39.872Z"
+    },
+    {
+      "id": "student-roster-NCEP-059-26-1792134588702-0",
+      "traineeInfo": {
+        "traineeName": "Hailu Feleke Cherana",
+        "traineeId": "NCEP-059-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:10:07.674Z"
+    },
+    {
+      "id": "student-roster-NCEP-019-26-1792134614201-0",
+      "traineeInfo": {
+        "traineeName": "Halid Muhammed Ali",
+        "traineeId": "NCEP-019-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:10:32.042Z"
+    },
+    {
+      "id": "student-roster-NCEP-016-26-1792134630328-0",
+      "traineeInfo": {
+        "traineeName": "Ilala Belay Zeleke",
+        "traineeId": "NCEP-016-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:10:40.837Z"
+    },
+    {
+      "id": "student-roster-NCEP-051-26-1792134651113-0",
+      "traineeInfo": {
+        "traineeName": "Jabesa Fekadu Yadeta",
+        "traineeId": "NCEP-051-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:11:04.135Z"
+    },
+    {
+      "id": "student-roster-NCEP-045-26-1792134668786-0",
+      "traineeInfo": {
+        "traineeName": "Jabessa Abdisa Tefera",
+        "traineeId": "NCEP-045-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:11:18.620Z"
+    },
+    {
+      "id": "student-roster-NCEP-04-26-1792134691653-0",
+      "traineeInfo": {
+        "traineeName": "Kasim sherefa ahmed",
+        "traineeId": "NCEP-04-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:11:48.681Z"
+    },
+    {
+      "id": "student-roster-NCEP-066-26-1792134737030-0",
+      "traineeInfo": {
+        "traineeName": "kitila Dinkisa Idesa",
+        "traineeId": "NCEP-066-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:12:29.947Z"
+    },
+    {
+      "id": "student-roster-NCEP-029-26-1792134771686-0",
+      "traineeInfo": {
+        "traineeName": "Kiya Daba Guluma",
+        "traineeId": "NCEP-029-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:13:08.572Z"
+    },
+    {
+      "id": "student-roster-NCEP-028-26-1792134788177-0",
+      "traineeInfo": {
+        "traineeName": "Kuma Adugna Debele",
+        "traineeId": "NCEP-028-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:13:21.850Z"
+    },
+    {
+      "id": "student-roster-NCEP-012-26-1792134811564-0",
+      "traineeInfo": {
+        "traineeName": "Lidya Temesgen Dirirsa",
+        "traineeId": "NCEP-012-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:13:51.064Z"
+    },
+    {
+      "id": "student-roster-NCEP-014-26-1792134827885-0",
+      "traineeInfo": {
+        "traineeName": "Liya Ahmiti Mohammed",
+        "traineeId": "NCEP-014-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:14:07.112Z"
+    },
+    {
+      "id": "student-roster-NCEP-027-26-1792134845542-0",
+      "traineeInfo": {
+        "traineeName": "Megersa Hailu Abetu",
+        "traineeId": "NCEP-027-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:14:16.093Z"
+    },
+    {
+      "id": "student-roster-NCEP-050-26-1792134861653-0",
+      "traineeInfo": {
+        "traineeName": "Melaku Addise Mekonen",
+        "traineeId": "NCEP-050-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:14:41.050Z"
+    },
+    {
+      "id": "student-roster-NCEP-011-26-1792134881800-0",
+      "traineeInfo": {
+        "traineeName": "Mohammednur Bushura Adiro",
+        "traineeId": "NCEP-011-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:14:52.675Z"
+    },
+    {
+      "id": "student-roster-NCEP-03-26-1792134903074-0",
+      "traineeInfo": {
+        "traineeName": "Molla Ayalew Tefera",
+        "traineeId": "NCEP-03-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:15:17.692Z"
+    },
+    {
+      "id": "student-roster-NCEP-061-26-1792134924220-0",
+      "traineeInfo": {
+        "traineeName": "Muktar Yesuf Hasan",
+        "traineeId": "NCEP-061-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:15:42.838Z"
+    },
+    {
+      "id": "student-roster-NCEP-064-26-1792134954681-0",
+      "traineeInfo": {
+        "traineeName": "Mulachew Nigatu Anshebo",
+        "traineeId": "NCEP-064-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:16:13.209Z"
+    },
+    {
+      "id": "student-roster-NCEP-022-26-1792134978684-0",
+      "traineeInfo": {
+        "traineeName": "Mulusew Tewelign Mandie",
+        "traineeId": "NCEP-022-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:16:40.193Z"
+    },
+    {
+      "id": "student-roster-NCEP-05-26-1792134999590-0",
+      "traineeInfo": {
+        "traineeName": "Mustefa Hussen Jarso",
+        "traineeId": "NCEP-05-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:16:49.688Z"
+    },
+    {
+      "id": "student-roster-NCEP-058-26-1792135024265-0",
+      "traineeInfo": {
+        "traineeName": "Nebere Elias Hankamo",
+        "traineeId": "NCEP-058-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:17:23.054Z"
+    },
+    {
+      "id": "student-roster-NCEP-02-26-1792135041457-0",
+      "traineeInfo": {
+        "traineeName": "Negasa Matiwos Gadisa",
+        "traineeId": "NCEP-02-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:17:39.058Z"
+    },
+    {
+      "id": "student-roster-NCEP-039-26-1792135056811-0",
+      "traineeInfo": {
+        "traineeName": "Nigusu Nigat Mengaw",
+        "traineeId": "NCEP-039-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:17:48.363Z"
+    },
+    {
+      "id": "student-roster-NCEP-067-26-1792135071413-0",
+      "traineeInfo": {
+        "traineeName": "Rahel Gedif Chekol",
+        "traineeId": "NCEP-067-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:18:01.826Z"
+    },
+    {
+      "id": "student-roster-NCEP-037-26-1792135086052-0",
+      "traineeInfo": {
+        "traineeName": "Sitotaw Molla",
+        "traineeId": "NCEP-037-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:18:27.062Z"
+    },
+    {
+      "id": "student-roster-NCEP-010-26-1792135104269-0",
+      "traineeInfo": {
+        "traineeName": "Tadelu Korsa Alemu",
+        "traineeId": "NCEP-010-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:18:41.055Z"
+    },
+    {
+      "id": "student-roster-NCEP-054-26-1792135118490-0",
+      "traineeInfo": {
+        "traineeName": "Wako Hajimekura Hawas",
+        "traineeId": "NCEP-054-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:18:59.063Z"
+    },
+    {
+      "id": "student-roster-NCEP-062-26-1792135136697-0",
+      "traineeInfo": {
+        "traineeName": "Wubetu Alene Dessie",
+        "traineeId": "NCEP-062-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:19:11.173Z"
+    },
+    {
+      "id": "student-roster-NCEP-056-26-1792135157784-0",
+      "traineeInfo": {
+        "traineeName": "Yetinayet Yewondwossen",
+        "traineeId": "NCEP-056-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:19:35.064Z"
+    },
+    {
+      "id": "student-roster-NCEP -08-26-1792135173309-0",
+      "traineeInfo": {
+        "traineeName": "Yewubdar Alemu Marie",
+        "traineeId": "NCEP -08-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:19:50.427Z"
+    },
+    {
+      "id": "student-roster-NCEP-047-26-1792135191125-0",
+      "traineeInfo": {
+        "traineeName": "Yitayeh Getinet Enyew",
+        "traineeId": "NCEP-047-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:20:08.059Z"
+    },
+    {
+      "id": "student-roster-NCEP-024-26-1792135207204-0",
+      "traineeInfo": {
+        "traineeName": "Yohannes Godie Ashebir",
+        "traineeId": "NCEP-024-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:20:30.110Z"
+    },
+    {
+      "id": "student-roster-NCEP-025-26-1792135229550-0",
+      "traineeInfo": {
+        "traineeName": "Zekarias Mengist Andargie",
+        "traineeId": "NCEP-025-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T07:20:39.370Z"
+    },
+    {
+      "id": "student-roster-NCEP-063-26-1792135243668-0",
+      "traineeInfo": {
+        "traineeName": "Zinet Kiflie Lulsegd",
+        "traineeId": "NCEP-063-26",
+        "assignedClinicalPreceptor": "Abaynesh Mekonnen",
+        "clinicalDepartmentWard": "Medical ICU",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "updatedAt": "2026-10-16T08:42:25.141Z"
     }
   ],
-  "preceptors": [],
-  "lastUpdated": "2026-10-14T07:23:53.437Z"
+  "preceptors": [
+    {
+      "id": "prec-batch-1792140406864-0",
+      "name": "Abaynesh Mekonnen",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "2657",
+      "initials": "AM",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406864-1",
+      "name": "Aklil Hailu",
+      "title": "Mentor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "2356",
+      "initials": "AH",
+      "role": "mentor"
+    },
+    {
+      "id": "prec-batch-1792140406864-2",
+      "name": "Amina Beshir",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "7772",
+      "initials": "AB",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406864-3",
+      "name": "Asselefech Negewo",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "3820",
+      "initials": "AN",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406864-4",
+      "name": "Boka Dugasa",
+      "title": "Mentor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "6647",
+      "initials": "BD",
+      "role": "mentor"
+    },
+    {
+      "id": "prec-batch-1792140406864-5",
+      "name": "Getachew Wodajo",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "5589",
+      "initials": "GW",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406864-6",
+      "name": "Jembere Tesfaye",
+      "title": "Mentor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "2236",
+      "initials": "JT",
+      "role": "mentor"
+    },
+    {
+      "id": "prec-batch-1792140406864-7",
+      "name": "Kono Tadese",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "9378",
+      "initials": "KT",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406864-8",
+      "name": "Meriem Seid",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "9270",
+      "initials": "MS",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406864-9",
+      "name": "Mohamed Legas",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "6979",
+      "initials": "ML",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406864-10",
+      "name": "Teje Tufa",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "9141",
+      "initials": "TT",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406864-11",
+      "name": "Tiruneh Ararsa",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "2902",
+      "initials": "TA",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406865-12",
+      "name": "Wondossen Tekileselasie",
+      "title": "Clinical Preceptor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "3077",
+      "initials": "WT",
+      "role": "preceptor"
+    },
+    {
+      "id": "prec-batch-1792140406865-13",
+      "name": "Zeleke Argaw",
+      "title": "Mentor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "8148",
+      "initials": "ZA",
+      "role": "mentor"
+    },
+    {
+      "id": "prec-batch-1792140406865-14",
+      "name": "Zuriash Mengistu",
+      "title": "Mentor",
+      "wardDepartment": "Clinical Rotation Ward",
+      "pin": "5217",
+      "initials": "ZM",
+      "role": "mentor"
+    },
+    {
+      "id": "prec-1792140612358",
+      "name": "Mr. Yohannes Ayalew",
+      "title": "Program Coordinator",
+      "role": "lead_educator",
+      "wardDepartment": "Medical-Surgical",
+      "pin": "4182",
+      "initials": "LE"
+    }
+  ],
+  "lastUpdated": "2026-10-16T09:01:37.981Z"
 }
