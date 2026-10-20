@@ -1,0 +1,31 @@
+{
+  "id": "/",
+  "name": "NursLog - Nursing e-Logbook & Clinical Portfolio",
+  "short_name": "NursLog",
+  "description": "e-Logbook and e-portfolio for nursing students with mentor digital signing, clinical rotation progress tracking, reflection journal, and certified academic exports.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#0d9488",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ]
+}

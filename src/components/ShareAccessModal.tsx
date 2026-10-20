@@ -12,6 +12,10 @@ import {
   ExternalLink,
   Key,
   Award,
+  Smartphone,
+  Laptop,
+  Tablet,
+  CheckCircle2,
 } from 'lucide-react';
 import { getPreceptorPin, getStoredPreceptors } from '../utils/storage';
 
@@ -258,6 +262,54 @@ export function ShareAccessModal({ isOpen, onClose }: ShareAccessModalProps) {
                 </span>
                 <span>
                   Trainees cannot switch to Preceptor/Lead Educator mode or access administrative tabs without an authorized staff PIN.
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Apple & Cross-Device Compatibility Card */}
+          <div className="p-4 bg-gradient-to-r from-slate-900 to-teal-950 text-white rounded-xl space-y-3 shadow-md">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Smartphone className="w-4 h-4 text-teal-300" />
+                <h4 className="font-bold text-xs text-white">Apple Devices Support (iPhone, iPad, Mac)</h4>
+              </div>
+              <span className="text-[10px] font-bold bg-teal-500/20 text-teal-300 border border-teal-500/30 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                100% Compatible
+              </span>
+            </div>
+
+            <p className="text-[11px] text-slate-300 leading-relaxed">
+              The application runs smoothly on any modern Apple browser (Safari, Chrome, Edge, Firefox) without requiring any App Store download.
+            </p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2.5 text-[11px] text-slate-200">
+              <div className="p-2.5 bg-white/5 rounded-lg border border-white/10 space-y-1">
+                <span className="font-bold text-teal-300 block flex items-center gap-1">
+                  <Smartphone className="w-3.5 h-3.5" />
+                  iPhone (iOS)
+                </span>
+                <span className="text-[10px] text-slate-300 leading-tight block">
+                  Touch-optimized navigation, native camera OCR logbook scanning, and Safari <em>&ldquo;Add to Home Screen&rdquo;</em> for full-screen PWA launch.
+                </span>
+              </div>
+              <div className="p-2.5 bg-white/5 rounded-lg border border-white/10 space-y-1">
+                <span className="font-bold text-teal-300 block flex items-center gap-1">
+                  <Tablet className="w-3.5 h-3.5" />
+                  iPad (iPadOS)
+                </span>
+                <span className="text-[10px] text-slate-300 leading-tight block">
+                  Dual-pane clinical layout, finger and <strong>Apple Pencil</strong> support on the preceptor signature pad with zero palm interference.
+                </span>
+              </div>
+              <div className="p-2.5 bg-white/5 rounded-lg border border-white/10 space-y-1">
+                <span className="font-bold text-teal-300 block flex items-center gap-1">
+                  <Laptop className="w-3.5 h-3.5" />
+                  Mac (macOS)
+                </span>
+                <span className="text-[10px] text-slate-300 leading-tight block">
+                  Safari / Chrome desktop dashboard with spreadsheet CSV bulk roster import, Word (.docx) manual generator, and official academic PDF printing.
                 </span>
               </div>
             </div>
