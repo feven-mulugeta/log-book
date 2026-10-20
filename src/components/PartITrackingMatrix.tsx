@@ -9,6 +9,9 @@ import {
   Paperclip,
   Award,
   Lock,
+  MapPin,
+  Users,
+  ArrowRightLeft,
 } from 'lucide-react';
 import { DetailedActivityLogSheet, NCEPSessionDefinition, SubCompetencyId, RegisteredPreceptor } from '../types/nursing';
 import { NCEP_SESSIONS_DEFINITIONS } from '../data/ncepData';
@@ -116,6 +119,23 @@ export function PartITrackingMatrix({
     }
   };
 
+  // Distinct preceptors and wards across all evaluated sessions for this student
+  const evaluatedLogs = detailedLogs.filter((l) => l.preceptorSignoff?.isSigned || l.status === 'Met');
+  const evaluatingPreceptors = Array.from(
+    new Set(
+      evaluatedLogs
+        .map((l) => l.preceptorSignoff?.preceptorName?.trim())
+        .filter((n): n is string => !!n)
+    )
+  );
+  const rotationWards = Array.from(
+    new Set(
+      detailedLogs
+        .map((l) => l.clinicalSettingWard?.split('/')[0].trim())
+        .filter((w): w is string => !!w)
+    )
+  );
+
   return (
     <div className="space-y-6">
       {/* Title & Real-time Progress Bar */}
@@ -150,6 +170,42 @@ export function PartITrackingMatrix({
         </div>
       </div>
 
+      {/* Clinical Rotations & Multi-Preceptor Badge Banner */}
+      <div className="bg-amber-50/70 border border-amber-200/90 rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 text-xs">
+        <div className="flex items-start gap-3">
+          <div className="p-2 bg-amber-500/10 text-amber-900 rounded-xl shrink-0 mt-0.5">
+            <ArrowRightLeft className="w-4 h-4" />
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <span className="font-bold text-amber-950">Clinical Rotations &amp; Multi-Preceptor Evaluations Supported</span>
+              <span className="bg-amber-200/80 text-amber-950 px-2 py-0.5 rounded-full text-[10px] font-bold">
+                {evaluatingPreceptors.length > 0 ? `${evaluatingPreceptors.length} Faculty Evaluator${evaluatingPreceptors.length > 1 ? 's' : ''}` : 'Multi-Ward Tracking'}
+              </span>
+            </div>
+            <p className="text-[11px] text-amber-900/80 mt-0.5">
+              As trainees rotate across clinical wards, different preceptors and mentors evaluate and stamp individual sessions with their unique credentials and PIN.
+            </p>
+          </div>
+        </div>
+
+        {/* Wards & Preceptors Badges */}
+        <div className="flex flex-wrap items-center gap-1.5 shrink-0">
+          {rotationWards.slice(0, 3).map((w) => (
+            <span key={w} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-amber-300 text-amber-950 text-[10px] font-semibold">
+              <MapPin className="w-2.5 h-2.5 text-amber-700" />
+              <span>{w}</span>
+            </span>
+          ))}
+          {evaluatingPreceptors.slice(0, 2).map((p) => (
+            <span key={p} className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-teal-300 text-teal-950 text-[10px] font-semibold">
+              <Users className="w-2.5 h-2.5 text-teal-700" />
+              <span>{p.split(' ')[0]} {p.split(' ')[1] || ''}</span>
+            </span>
+          ))}
+        </div>
+      </div>
+
       {/* Main Table Container (Styled to reflect the exact grid in the PDF) */}
       <div className="bg-white rounded-2xl border border-slate-300 shadow-2xs overflow-hidden">
         <div className="overflow-x-auto">
@@ -161,7 +217,7 @@ export function PartITrackingMatrix({
                 <th className="py-3 px-4 font-bold w-2/5">Required Clinical Activity / Assignment</th>
                 <th className="py-3 px-3 font-bold text-center w-28">Date Completed</th>
                 <th className="py-3 px-3 font-bold text-center w-28">Status (Pending / Met)</th>
-                <th className="py-3 px-3 font-bold text-center w-24">Preceptor Initials</th>
+                <th className="py-3 px-3 font-bold text-center w-28">Preceptor &amp; Ward</th>
                 <th className="py-3 px-3 font-bold text-center w-24">Part II Action</th>
               </tr>
             </thead>
@@ -244,12 +300,25 @@ export function PartITrackingMatrix({
                           </span>
                         </td>
 
-                        {/* Preceptor Initials */}
-                        <td className="py-3 px-3 align-top text-center font-mono font-bold">
+                        {/* Preceptor Initials & Ward */}
+                        <td className="py-3 px-3 align-top text-center font-mono">
                           {log?.preceptorSignoff?.isSigned ? (
-                            <span className="text-teal-900 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 text-xs">
-                              {log.preceptorSignoff.preceptorInitials || 'AT'}
-                            </span>
+                            <div className="flex flex-col items-center">
+                              <span
+                                className="font-bold text-teal-900 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 text-xs shadow-2xs cursor-help inline-block"
+                                title={`Evaluated & Signed by: ${log.preceptorSignoff.preceptorName || 'Clinical Preceptor'}\nWard: ${log.clinicalSettingWard || 'Clinical Ward'}\nDate: ${log.preceptorSignoff.dateSigned || log.dateOfActivity || 'N/A'}`}
+                              >
+                                {log.preceptorSignoff.preceptorInitials || 'CP'}
+                              </span>
+                              {log.clinicalSettingWard && (
+                                <span
+                                  className="text-[9px] text-slate-500 font-sans truncate max-w-[85px] mt-0.5 block font-normal"
+                                  title={`Clinical Ward: ${log.clinicalSettingWard}`}
+                                >
+                                  {log.clinicalSettingWard.split('/')[0].trim()}
+                                </span>
+                              )}
+                            </div>
                           ) : (
                             <span className="text-slate-300">___</span>
                           )}

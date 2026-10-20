@@ -396,6 +396,36 @@ export default function App() {
     }
   };
 
+  const handleUpdateCohortStudent = (updatedStudent: CohortStudentRecord) => {
+    setCohortStudents((prev) => {
+      const idx = prev.findIndex(
+        (s) => s.id === updatedStudent.id || s.traineeInfo.traineeId === updatedStudent.traineeInfo.traineeId
+      );
+      if (idx >= 0) {
+        const copy = [...prev];
+        copy[idx] = updatedStudent;
+        saveStoredCohortStudents(copy);
+        cloudSync.syncCohort(copy);
+        return copy;
+      }
+      return prev;
+    });
+
+    if (
+      currentStudentRosterId === updatedStudent.id ||
+      traineeInfo.traineeId === updatedStudent.traineeInfo.traineeId
+    ) {
+      setTraineeInfo(updatedStudent.traineeInfo);
+      setDetailedLogs(updatedStudent.detailedLogs || []);
+      setFinalSignoff(updatedStudent.finalSignoff);
+    }
+    cloudSync.syncStudent(
+      updatedStudent,
+      'preceptor',
+      `Rotated ward/assigned preceptor for ${updatedStudent.traineeInfo.traineeName}`
+    );
+  };
+
   // Preceptor Quick Status Sign-Off from Part I Tracking Matrix
   const handleQuickPreceptorSignFromMatrix = (
     sessionNumber: number,
@@ -860,6 +890,7 @@ export default function App() {
               onDeleteStudent={handleDeleteCohortStudent}
               onImportStudentDossier={handleImportStudentDossier}
               onImportMultipleStudentDossiers={handleImportMultipleStudentDossiers}
+              onUpdateStudent={handleUpdateCohortStudent}
               userRole={userRole}
               onRequireLeadEducatorAuth={() => {
                 setTargetRoleForAuth('lead_educator');

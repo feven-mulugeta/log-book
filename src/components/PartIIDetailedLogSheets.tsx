@@ -68,8 +68,8 @@ export function PartIIDetailedLogSheets({
   const [signingLog, setSigningLog] = useState<DetailedActivityLogSheet | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingLogToSign, setPendingLogToSign] = useState<DetailedActivityLogSheet | null>(null);
-  const [preceptorName, setPreceptorName] = useState('Sister Almaz Tefera, RN, MSc');
-  const [preceptorInitials, setPreceptorInitials] = useState('AT');
+  const [preceptorName, setPreceptorName] = useState(() => getStoredPreceptors()[0]?.name || 'Abaynesh Mekonnen');
+  const [preceptorInitials, setPreceptorInitials] = useState(() => getStoredPreceptors()[0]?.initials || 'AM');
   const [competencyDemonstrated, setCompetencyDemonstrated] = useState<CompetencyRating>('Satisfactory');
   const [preceptorComments, setPreceptorComments] = useState(
     'Demonstrated sound clinical judgment, followed aseptic principles and accurately prioritized patient needs.'
@@ -86,8 +86,8 @@ export function PartIIDetailedLogSheets({
         `Competency demonstrated and validated by ${preceptor.name} (${preceptor.title} · ${preceptor.wardDepartment}).`
       );
     } else {
-      setPreceptorName(log.preceptorSignoff?.preceptorName || 'Sister Almaz Tefera, RN, MSc');
-      setPreceptorInitials(log.preceptorSignoff?.preceptorInitials || 'AT');
+      setPreceptorName(log.preceptorSignoff?.preceptorName || getStoredPreceptors()[0]?.name || 'Abaynesh Mekonnen');
+      setPreceptorInitials(log.preceptorSignoff?.preceptorInitials || getStoredPreceptors()[0]?.initials || 'AM');
       setPreceptorComments(
         log.preceptorSignoff?.comments ||
         'Demonstrated sound clinical judgment, followed aseptic principles and accurately prioritized patient needs.'
@@ -129,7 +129,10 @@ export function PartIIDetailedLogSheets({
     setSelectedSessionNumber(sessionNum);
     setDateOfActivity(new Date().toISOString().slice(0, 10));
     setDurationHours(4);
-    setClinicalSettingWard('Surgical Inpatient Ward 4B / Acute Care');
+    // Inherit the ward from the trainee's most recent log or default to Medical ICU
+    const lastLog = logs[0];
+    const defaultWard = lastLog?.clinicalSettingWard || 'Medical ICU';
+    setClinicalSettingWard(defaultWard);
     setActivityDescription('');
     setReflectiveNotes('');
     setAttachments([]);
@@ -611,10 +614,27 @@ export function PartIIDetailedLogSheets({
                   <input
                     type="text"
                     required
+                    list="clinical-setting-wards-list"
                     value={clinicalSettingWard}
                     onChange={(e) => setClinicalSettingWard(e.target.value)}
-                    className="w-full px-3 py-2 rounded-xl border border-slate-300"
+                    placeholder="e.g. Medical ICU"
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold"
                   />
+                  <datalist id="clinical-setting-wards-list">
+                    <option value="Medical ICU" />
+                    <option value="Surgical Inpatient Ward 4B / Acute Care" />
+                    <option value="Emergency Center & Trauma" />
+                    <option value="Pediatric ICU (PICU)" />
+                    <option value="Coronary Care Unit (CCU)" />
+                    <option value="Resuscitation & Red Zone" />
+                    <option value="Neuro-ICU & Stroke Unit" />
+                    <option value="Renal & Hemodialysis Unit" />
+                    <option value="Burns Critical Care Unit" />
+                    <option value="Trauma & Orthopedic Ward" />
+                    <option value="Main Operating Theatres" />
+                    <option value="Medical High Dependency Unit (HDU)" />
+                    <option value="Emergency Observation Unit" />
+                  </datalist>
                 </div>
               </div>
 

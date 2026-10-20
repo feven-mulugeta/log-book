@@ -421,6 +421,7 @@ export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
                       <li><strong className="text-teal-900">Part I Matrix:</strong> Opens trainee’s 18-session matrix for milestone sign-offs.</li>
                       <li><strong className="text-blue-900">Part II Form:</strong> Opens Section 3 (Formative Evaluation) to score competency, write qualitative coaching notes, and sign.</li>
                       <li><strong className="text-purple-900">Part III Sign-off:</strong> Opens the Final Summative Evaluation Rubric and Institutional Certification.</li>
+                      <li><strong className="text-amber-900">Rotate Ward:</strong> Rotates the trainee to a new ward (Medical ICU, Surgical, Emergency, PICU, CCU, etc.) and assigns their new preceptor/mentor with 1 click while permanently preserving all past evaluations!</li>
                       <li><strong className="text-slate-900">Import Student Dossier &amp; Roster:</strong> Click &ldquo;Import Student Dossier&rdquo; in the roster header. Accepts <strong>.json</strong> (digital student dossier backups containing all 18 logs, reflections, and preceptor ratings) and <strong>.csv</strong> (cohort spreadsheet rosters for bulk-enrolling students). Supports multi-file selection, drag-and-drop, and direct text paste with instant preview!</li>
                     </ul>
                   </div>
@@ -445,6 +446,22 @@ export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
                   <li><strong>+ Add Preceptor:</strong> Register individual mentors with custom PINs.</li>
                   <li><strong>Show / Hide PINs:</strong> Toggle visibility when assigning passcodes to preceptor staff.</li>
                   <li><strong>Export CSV:</strong> Download a spreadsheet backup of your department faculty roster.</li>
+                </ul>
+              </div>
+
+              {/* Clinical Rotations & Multi-Preceptor Evaluations */}
+              <div className="p-3.5 bg-amber-50/80 rounded-xl border border-amber-300 space-y-2">
+                <h4 className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                  <ShieldCheck className="w-4 h-4 text-amber-700" />
+                  <span>Clinical Rotations &amp; Multi-Preceptor Evaluation Protocol</span>
+                </h4>
+                <p className="text-[11px] text-amber-900/90 leading-relaxed">
+                  <strong>Does the application accommodate student rotations from one ward to another where preceptors change?</strong> Yes, the NCEP system is natively designed for clinical rotations:
+                </p>
+                <ul className="list-disc list-inside space-y-1 text-[11px] text-amber-950/90 pl-1">
+                  <li><strong>Multi-Preceptor Attribution:</strong> Every single session (Sessions 1 to 18) can be supervised, evaluated, and signed off by a different preceptor or mentor. When an instructor enters their 4-digit PIN, their individual name, role, department, and initials are permanently attributed to that session.</li>
+                  <li><strong>Ward-Specific Log Sheets:</strong> Each log sheet in Part II has its own dedicated <em>Clinical Setting / Ward</em> field, recording precisely which unit (Medical ICU, Surgical Ward 4B, Emergency &amp; Trauma, PICU, CCU, etc.) that clinical activity occurred in.</li>
+                  <li><strong>1-Click Ward Rotation:</strong> In the Cohort Manager, click <em>&ldquo;Rotate Ward&rdquo;</em> on any trainee to rotate them to a new department and assign their next primary preceptor. All previous evaluations, signatures, and notes remain intact!</li>
                 </ul>
               </div>
 

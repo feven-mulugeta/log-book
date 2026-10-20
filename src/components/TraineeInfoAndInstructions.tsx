@@ -156,12 +156,29 @@ export function TraineeInfoAndInstructions({
                   <input
                     type="text"
                     required
+                    list="trainee-info-wards-list"
                     value={formData.clinicalDepartmentWard}
                     onChange={(e) =>
                       setFormData({ ...formData, clinicalDepartmentWard: e.target.value })
                     }
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700"
+                    placeholder="e.g. Medical ICU"
+                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700 font-semibold"
                   />
+                  <datalist id="trainee-info-wards-list">
+                    <option value="Medical ICU" />
+                    <option value="Surgical Inpatient Ward 4B / Acute Care" />
+                    <option value="Emergency Center & Trauma" />
+                    <option value="Pediatric ICU (PICU)" />
+                    <option value="Coronary Care Unit (CCU)" />
+                    <option value="Resuscitation & Red Zone" />
+                    <option value="Neuro-ICU & Stroke Unit" />
+                    <option value="Renal & Hemodialysis Unit" />
+                    <option value="Burns Critical Care Unit" />
+                    <option value="Trauma & Orthopedic Ward" />
+                    <option value="Main Operating Theatres" />
+                    <option value="Medical High Dependency Unit (HDU)" />
+                    <option value="Emergency Observation Unit" />
+                  </datalist>
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -272,6 +289,19 @@ export function TraineeInfoAndInstructions({
               </div>
             </div>
           )}
+
+          {/* Clinical Rotations & Multi-Preceptor Note */}
+          <div className="p-3 bg-amber-50/70 border border-amber-200/90 rounded-xl text-xs flex items-start gap-2.5">
+            <span className="p-1.5 bg-amber-500/10 text-amber-900 rounded-lg shrink-0 mt-0.5">
+              <ShieldCheck className="w-4 h-4 text-amber-700" />
+            </span>
+            <div className="space-y-0.5">
+              <span className="font-bold text-amber-950 block">Clinical Ward Rotations &amp; Multi-Preceptor Evaluations Supported</span>
+              <p className="text-[11px] text-amber-900/80 leading-relaxed">
+                As trainees rotate across different clinical wards (Medical ICU, Surgical, Emergency, PICU, CCU, etc.), different assigned preceptors and mentors evaluate and sign off individual sessions throughout the residency. Each session log in Part II permanently records the specific ward setting, preceptor credentials, and formative feedback.
+              </p>
+            </div>
+          </div>
 
           {/* Instructions for Use from Page 1 */}
           <div className="space-y-3 pt-4 border-t border-slate-200">
