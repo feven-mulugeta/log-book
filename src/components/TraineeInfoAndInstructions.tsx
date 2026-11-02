@@ -18,9 +18,10 @@ import {
   Lock,
   Unlock,
   ShieldAlert,
+  Printer,
 } from 'lucide-react';
 import { TraineeInformation, CohortStudentRecord } from '../types/nursing';
-import { getStoredPreceptors, UserRole } from '../utils/storage';
+import { getStoredPreceptors, UserRole, BLANK_TRAINEE_INFO } from '../utils/storage';
 
 interface TraineeInfoAndInstructionsProps {
   traineeInfo: TraineeInformation;
@@ -31,6 +32,7 @@ interface TraineeInfoAndInstructionsProps {
   onResetToSample: () => void;
   onExportFullBackup: () => void;
   onImportBackupFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onDownloadPdf?: () => void;
   cohortStudents?: CohortStudentRecord[];
   onSelectStudent?: (student: CohortStudentRecord) => void;
   userRole?: UserRole;
@@ -49,6 +51,7 @@ export function TraineeInfoAndInstructions({
   onResetToSample,
   onExportFullBackup,
   onImportBackupFile,
+  onDownloadPdf,
   cohortStudents = [],
   onSelectStudent,
   userRole = 'trainee',
@@ -358,7 +361,13 @@ export function TraineeInfoAndInstructions({
                   • Clinical Department / Ward:
                 </span>
                 <p className="text-xs font-sans text-slate-800">
-                  {traineeInfo.clinicalDepartmentWard || '___________________________'}
+                  {traineeInfo.clinicalDepartmentWard ? (
+                    <strong className="text-slate-900 font-semibold">{traineeInfo.clinicalDepartmentWard}</strong>
+                  ) : (
+                    <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-400 italic text-[11px] border border-dashed border-slate-300">
+                      [Blank — click &ldquo;Edit Information&rdquo; to enter ward]
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -367,7 +376,13 @@ export function TraineeInfoAndInstructions({
                   • Assigned Clinical Preceptor / Mentor:
                 </span>
                 <p className="text-xs font-sans text-slate-800">
-                  {traineeInfo.assignedClinicalPreceptor || '_________________'}
+                  {traineeInfo.assignedClinicalPreceptor ? (
+                    <strong className="text-slate-900 font-semibold">{traineeInfo.assignedClinicalPreceptor}</strong>
+                  ) : (
+                    <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-400 italic text-[11px] border border-dashed border-slate-300">
+                      [Blank — click &ldquo;Edit Information&rdquo; to assign preceptor / mentor]
+                    </span>
+                  )}
                 </p>
               </div>
 
@@ -467,17 +482,19 @@ export function TraineeInfoAndInstructions({
                 {confirmBlank ? (
                   <div className="flex items-center gap-2 bg-rose-50 border border-rose-200 p-1.5 rounded-lg">
                     <span className="text-[11px] text-rose-800 font-bold">
-                      Erase all entries to start fresh?
+                      Erase all entries to start fresh with a blank logbook?
                     </span>
                     <button
                       type="button"
                       onClick={() => {
                         onResetToBlank();
+                        setFormData(BLANK_TRAINEE_INFO);
+                        setIsEditing(true);
                         setConfirmBlank(false);
                       }}
                       className="px-2.5 py-1 text-[11px] font-bold text-white bg-rose-700 hover:bg-rose-800 rounded transition-colors"
                     >
-                      Yes, Clear All
+                      Yes, Clear &amp; Open Blank Form
                     </button>
                     <button
                       type="button"
@@ -491,7 +508,7 @@ export function TraineeInfoAndInstructions({
                   <button
                     type="button"
                     onClick={() => setConfirmBlank(true)}
-                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-rose-700 bg-white hover:bg-rose-50 border border-slate-300 rounded-lg transition-colors"
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 hover:text-rose-700 bg-white hover:bg-rose-50 border border-slate-300 rounded-lg transition-colors cursor-pointer"
                   >
                     <Trash2 className="w-3.5 h-3.5" />
                     <span>Start Fresh / Blank Logbook</span>
@@ -501,16 +518,29 @@ export function TraineeInfoAndInstructions({
                 <button
                   type="button"
                   onClick={onResetToSample}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-lg transition-colors cursor-pointer"
                 >
                   <RotateCcw className="w-3.5 h-3.5" />
                   <span>Restore Demo Sample Data</span>
                 </button>
 
+                {onDownloadPdf && (
+                  <button
+                    type="button"
+                    onClick={onDownloadPdf}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-teal-800 hover:bg-teal-900 rounded-lg transition-colors shadow-2xs cursor-pointer ml-auto"
+                    title="Download and backup your complete 7-page academic logbook dossier in PDF format"
+                  >
+                    <Printer className="w-3.5 h-3.5" />
+                    <span>Download PDF Dossier &amp; Backup</span>
+                  </button>
+                )}
+
                 <button
                   type="button"
                   onClick={onExportFullBackup}
-                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors ml-auto"
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors cursor-pointer ${onDownloadPdf ? '' : 'ml-auto'}`}
+                  title="Export raw JSON backup file"
                 >
                   <Download className="w-3.5 h-3.5" />
                   <span>Backup Logbook (.json)</span>

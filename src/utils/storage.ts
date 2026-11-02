@@ -171,7 +171,8 @@ export function getStoredTraineeInfo(): TraineeInformation {
     const raw = localStorage.getItem(STORAGE_KEYS.TRAINEE_INFO);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed && parsed.traineeName && parsed.traineeName !== 'Feven Mulugeta') {
+      if (parsed && typeof parsed === 'object') {
+        // Return stored trainee info even if fields are blank
         return parsed;
       }
     }

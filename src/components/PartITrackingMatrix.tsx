@@ -217,7 +217,7 @@ export function PartITrackingMatrix({
                 <th className="py-3 px-4 font-bold w-2/5">Required Clinical Activity / Assignment</th>
                 <th className="py-3 px-3 font-bold text-center w-28">Date Completed</th>
                 <th className="py-3 px-3 font-bold text-center w-28">Status (Pending / Met)</th>
-                <th className="py-3 px-3 font-bold text-center w-28">Preceptor &amp; Ward</th>
+                <th className="py-3 px-3 font-bold text-center w-40">Preceptor / Mentor Signed &amp; Ward</th>
                 <th className="py-3 px-3 font-bold text-center w-24">Part II Action</th>
               </tr>
             </thead>
@@ -300,27 +300,39 @@ export function PartITrackingMatrix({
                           </span>
                         </td>
 
-                        {/* Preceptor Initials & Ward */}
-                        <td className="py-3 px-3 align-top text-center font-mono">
+                        {/* Preceptor / Mentor Signed & Ward */}
+                        <td className="py-3 px-3 align-top text-center font-sans">
                           {log?.preceptorSignoff?.isSigned ? (
-                            <div className="flex flex-col items-center">
+                            <div className="flex flex-col items-center gap-1">
                               <span
-                                className="font-bold text-teal-900 bg-teal-50 px-2 py-0.5 rounded border border-teal-200 text-xs shadow-2xs cursor-help inline-block"
-                                title={`Evaluated & Signed by: ${log.preceptorSignoff.preceptorName || 'Clinical Preceptor'}\nWard: ${log.clinicalSettingWard || 'Clinical Ward'}\nDate: ${log.preceptorSignoff.dateSigned || log.dateOfActivity || 'N/A'}`}
+                                className="font-bold text-teal-950 bg-teal-50/90 px-2 py-0.5 rounded-lg border border-teal-200 text-[11px] shadow-2xs leading-tight block text-center max-w-[150px]"
+                                title={`Full Evaluator Name: ${log.preceptorSignoff.preceptorName || 'Clinical Preceptor'}`}
                               >
-                                {log.preceptorSignoff.preceptorInitials || 'CP'}
+                                {log.preceptorSignoff.preceptorName || 'Clinical Preceptor'}
                               </span>
-                              {log.clinicalSettingWard && (
-                                <span
-                                  className="text-[9px] text-slate-500 font-sans truncate max-w-[85px] mt-0.5 block font-normal"
-                                  title={`Clinical Ward: ${log.clinicalSettingWard}`}
-                                >
-                                  {log.clinicalSettingWard.split('/')[0].trim()}
+                              <div className="flex items-center justify-center gap-1 text-[10px] text-slate-500 font-sans">
+                                {log.preceptorSignoff.preceptorInitials && (
+                                  <span className="font-mono font-bold text-teal-700 bg-teal-100/60 px-1 py-0.2 rounded text-[9px]">
+                                    {log.preceptorSignoff.preceptorInitials}
+                                  </span>
+                                )}
+                                {log.clinicalSettingWard && (
+                                  <span className="truncate max-w-[100px]" title={log.clinicalSettingWard}>
+                                    {log.clinicalSettingWard.split('/')[0].trim()}
+                                  </span>
+                                )}
+                              </div>
+                              {log.preceptorSignoff.dateSigned && (
+                                <span className="text-[9px] text-slate-400 font-mono block">
+                                  Signed: {log.preceptorSignoff.dateSigned}
                                 </span>
                               )}
                             </div>
                           ) : (
-                            <span className="text-slate-300">___</span>
+                            <div className="text-center">
+                              <span className="text-slate-300 text-xs block">—</span>
+                              <span className="text-[9px] text-slate-400 italic">Pending Mentor</span>
+                            </div>
                           )}
                         </td>
 

@@ -309,6 +309,34 @@ export function PartIIDetailedLogSheets({
                         <strong>Clinical Setting / Ward:</strong>{' '}
                         <span>{log.clinicalSettingWard}</span>
                       </p>
+                      {log.preceptorSignoff?.isSigned ? (
+                        <div className="sm:col-span-2 mt-1 p-2.5 bg-teal-50 border border-teal-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                          <div className="flex items-center gap-2">
+                            <CheckCircle2 className="w-4 h-4 text-teal-700 shrink-0" />
+                            <span className="text-teal-950 font-medium">
+                              Verified &amp; Signed by Preceptor / Mentor:{' '}
+                              <strong className="text-teal-900 font-bold underline decoration-teal-400">
+                                {log.preceptorSignoff.preceptorName}
+                              </strong>
+                              {log.preceptorSignoff.preceptorInitials && (
+                                <span className="ml-1 text-[11px] font-mono text-teal-800">
+                                  ({log.preceptorSignoff.preceptorInitials})
+                                </span>
+                              )}
+                            </span>
+                          </div>
+                          {log.preceptorSignoff.dateSigned && (
+                            <span className="text-[11px] font-mono font-semibold text-teal-800 bg-white px-2 py-0.5 rounded border border-teal-200">
+                              Signed: {log.preceptorSignoff.dateSigned}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="sm:col-span-2 mt-1 p-2 bg-slate-100/80 border border-slate-200 rounded-lg flex items-center gap-2 text-[11px] text-slate-500">
+                          <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                          <span>Awaiting assigned clinical preceptor or mentor evaluation and digital sign-off.</span>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -486,19 +514,32 @@ export function PartIIDetailedLogSheets({
 
                     {/* Preceptor Name, Signature & Date from PDF Page 6 */}
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-slate-200 font-sans text-xs">
-                      <div>
-                        <span className="text-[11px] font-bold text-slate-600 block">
-                          • Preceptor / Mentor Name:
+                      <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                          • Evaluator / Mentor Name:
                         </span>
-                        <p className="font-semibold text-slate-900 mt-1">
-                          {log.preceptorSignoff?.preceptorName || '______________________________'}
-                        </p>
+                        {log.preceptorSignoff?.preceptorName ? (
+                          <div className="space-y-0.5">
+                            <p className="font-bold text-teal-950 text-sm">
+                              {log.preceptorSignoff.preceptorName}
+                            </p>
+                            {log.preceptorSignoff.preceptorInitials && (
+                              <p className="text-[10px] text-teal-700 font-mono font-semibold">
+                                Initials: {log.preceptorSignoff.preceptorInitials}
+                              </p>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="font-mono text-slate-400 mt-1 italic">[Not yet evaluated]</p>
+                        )}
                       </div>
 
-                      <div>
-                        <span className="text-[11px] font-bold text-slate-600 block">• Signature:</span>
+                      <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                          • Digital Signature:
+                        </span>
                         {log.preceptorSignoff?.signatureDataUrl ? (
-                          <div className="h-10 w-36 bg-white rounded border border-slate-200 p-1 mt-1">
+                          <div className="h-10 w-36 bg-white rounded border border-slate-200 p-1">
                             <img
                               src={log.preceptorSignoff.signatureDataUrl}
                               alt="Preceptor signature"
@@ -506,15 +547,21 @@ export function PartIIDetailedLogSheets({
                             />
                           </div>
                         ) : (
-                          <p className="font-mono text-slate-400 mt-1">______________________</p>
+                          <p className="font-mono text-slate-400 mt-1 italic">[Pending Signature]</p>
                         )}
                       </div>
 
-                      <div>
-                        <span className="text-[11px] font-bold text-slate-600 block">• Date Signed:</span>
-                        <p className="font-mono font-semibold text-slate-900 mt-1">
-                          {log.preceptorSignoff?.dateSigned || '______________________'}
-                        </p>
+                      <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
+                        <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                          • Date Signed:
+                        </span>
+                        {log.preceptorSignoff?.dateSigned ? (
+                          <p className="font-mono font-bold text-slate-900 mt-1 text-xs">
+                            {log.preceptorSignoff.dateSigned}
+                          </p>
+                        ) : (
+                          <p className="font-mono text-slate-400 mt-1 italic">[Pending Date]</p>
+                        )}
                       </div>
                     </div>
                   </div>

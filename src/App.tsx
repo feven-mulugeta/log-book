@@ -645,6 +645,7 @@ export default function App() {
     setTraineeInfo(blank.traineeInfo);
     setDetailedLogs(blank.detailedLogs);
     setFinalSignoff(blank.finalSignoff);
+    setStudentUnlocked(blank.traineeInfo.traineeId || 'fresh-blank', true);
   };
 
   // Reset to sample demo data
@@ -853,10 +854,11 @@ export default function App() {
               <button
                 type="button"
                 onClick={() => window.print()}
-                className="hidden md:inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-teal-950 bg-teal-100/90 hover:bg-teal-200 border border-teal-300/80 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                title="Download / Save Complete 7-Page Academic Dossier & Logbook in PDF format (Destination: Save as PDF)"
               >
-                <Printer className="w-3.5 h-3.5" />
-                <span>Print PDF</span>
+                <Printer className="w-3.5 h-3.5 text-teal-800" />
+                <span>Download PDF Dossier</span>
               </button>
 
               <button
@@ -956,6 +958,7 @@ export default function App() {
               onResetToSample={handleResetToSample}
               onExportFullBackup={handleExportFullBackup}
               onImportBackupFile={handleImportBackupFile}
+              onDownloadPdf={() => window.print()}
               cohortStudents={cohortStudents}
               onSelectStudent={handleSelectCohortStudent}
               userRole={userRole}

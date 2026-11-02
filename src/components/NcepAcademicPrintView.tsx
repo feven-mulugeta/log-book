@@ -154,8 +154,8 @@ export function NcepAcademicPrintView({
                 <th className="p-2 border-r border-black w-1/4">Sub-Competency &amp; Session Focus</th>
                 <th className="p-2 border-r border-black w-2/5">Required Clinical Activity / Assignment</th>
                 <th className="p-2 border-r border-black text-center w-24">Date Completed</th>
-                <th className="p-2 border-r border-black text-center w-24">Status (Pending / Met)</th>
-                <th className="p-2 text-center w-20">Preceptor Initials</th>
+                <th className="p-2 border-r border-black text-center w-20">Status</th>
+                <th className="p-2 text-center w-28">Preceptor / Mentor Signed</th>
               </tr>
             </thead>
             <tbody>
@@ -182,8 +182,19 @@ export function NcepAcademicPrintView({
                         <td className="p-2 border-r border-gray-400 text-center font-bold align-top text-[11px]">
                           {log?.status === 'Met' ? 'Met' : 'Pending'}
                         </td>
-                        <td className="p-2 text-center font-bold font-mono align-top text-[11px]">
-                          {log?.preceptorSignoff?.preceptorInitials || ''}
+                        <td className="p-2 text-center font-bold align-top text-[10px]">
+                          {log?.preceptorSignoff?.preceptorName ? (
+                            <div>
+                              <span>{log.preceptorSignoff.preceptorName}</span>
+                              {log.preceptorSignoff.preceptorInitials && (
+                                <span className="block font-mono text-[9px] text-gray-600">
+                                  ({log.preceptorSignoff.preceptorInitials})
+                                </span>
+                              )}
+                            </div>
+                          ) : (
+                            log?.preceptorSignoff?.preceptorInitials || ''
+                          )}
                         </td>
                       </tr>
                     );

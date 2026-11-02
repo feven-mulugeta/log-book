@@ -99,8 +99,8 @@ export function InstructorCohortManager({
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [newStudentName, setNewStudentName] = useState('');
   const [newStudentId, setNewStudentId] = useState('');
-  const [newWard, setNewWard] = useState('Medical ICU');
-  const [newPreceptor, setNewPreceptor] = useState('Abaynesh Mekonnen');
+  const [newWard, setNewWard] = useState('');
+  const [newPreceptor, setNewPreceptor] = useState('');
   const [studentToDelete, setStudentToDelete] = useState<CohortStudentRecord | null>(null);
 
   const handleDeleteStudentClick = (student: CohortStudentRecord) => {
@@ -1192,6 +1192,8 @@ export function InstructorCohortManager({
     setIsAddModalOpen(false);
     setNewStudentName('');
     setNewStudentId('');
+    setNewWard('');
+    setNewPreceptor('');
   };
 
   const handleFileImport = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2137,10 +2139,12 @@ export function InstructorCohortManager({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Ward / Department:</label>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Clinical Department / Ward: <span className="font-normal text-slate-400 text-[10px]">(Optional — leave blank to fill later)</span>
+                </label>
                 <input
                   type="text"
-                  required
+                  placeholder="Enter clinical ward or leave blank"
                   value={newWard}
                   onChange={(e) => setNewWard(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300"
@@ -2148,12 +2152,13 @@ export function InstructorCohortManager({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-700 mb-1">Assigned Preceptor:</label>
+                <label className="block font-bold text-slate-700 mb-1">
+                  Assigned Clinical Preceptor / Mentor: <span className="font-normal text-slate-400 text-[10px]">(Optional — leave blank to fill later)</span>
+                </label>
                 <input
                   type="text"
-                  required
                   list="cohort-preceptors-list"
-                  placeholder="Select preceptor or type custom name"
+                  placeholder="Select preceptor or leave blank"
                   value={newPreceptor}
                   onChange={(e) => setNewPreceptor(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300"
