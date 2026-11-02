@@ -23,6 +23,7 @@ const STORAGE_KEYS = {
   PRECEPTOR_PIN: 'ncep_preceptor_pin',
   COHORT_STUDENTS: 'ncep_cohort_students',
   PRECEPTOR_ROSTER: 'ncep_preceptor_roster',
+  UNLOCKED_STUDENTS: 'ncep_unlocked_students_session',
 };
 
 export type UserRole = 'trainee' | 'preceptor' | 'lead_educator';
@@ -282,6 +283,98 @@ export function resetStorageToSample(): {
   };
 }
 
+export function computeDefaultStudentPin(traineeId?: string, index: number = 0): string {
+  const cleanId = (traineeId || '').trim();
+  const numMatch = cleanId.match(/\d+/g);
+  if (numMatch && numMatch.length >= 2) {
+    const p1 = numMatch[0].padStart(2, '0').slice(-2);
+    const p2 = numMatch[1].padStart(2, '0').slice(-2);
+    return `${p1}${p2}`;
+  } else if (numMatch && numMatch.length === 1) {
+    return numMatch[0].padStart(4, '0').slice(-4);
+  }
+  return String(1000 + (index % 9000));
+}
+
+export function getStudentPin(student?: CohortStudentRecord | TraineeInformation | null): string {
+  if (!student) return '1234';
+  if ('traineeInfo' in student && student.traineeInfo) {
+    if (student.studentPin) return student.studentPin.trim();
+    if (student.traineeInfo.studentPin) return student.traineeInfo.studentPin.trim();
+    return computeDefaultStudentPin(student.traineeInfo.traineeId);
+  }
+  if ('studentPin' in student && student.studentPin) {
+    return student.studentPin.trim();
+  }
+  if ('traineeId' in student && student.traineeId) {
+    return computeDefaultStudentPin(student.traineeId);
+  }
+  return '1234';
+}
+
+export function verifyStudentPin(
+  student: CohortStudentRecord | TraineeInformation | null | undefined,
+  pinInput: string
+): boolean {
+  const trimmed = pinInput.trim();
+  if (!trimmed) return false;
+  // Master institutional preceptor PIN or lead educator PIN can override if student forgot PIN
+  if (verifyPreceptorPin(trimmed)) {
+    return true;
+  }
+  const expectedPin = getStudentPin(student);
+  return trimmed === expectedPin;
+}
+
+export function isStudentUnlocked(traineeIdOrId: string): boolean {
+  if (!traineeIdOrId) return false;
+  try {
+    const raw = sessionStorage.getItem(STORAGE_KEYS.UNLOCKED_STUDENTS);
+    if (!raw) return false;
+    const list: string[] = JSON.parse(raw);
+    return Array.isArray(list) && list.includes(traineeIdOrId.trim());
+  } catch (e) {
+    return false;
+  }
+}
+
+export function setStudentUnlocked(traineeIdOrId: string, unlocked: boolean): void {
+  if (!traineeIdOrId) return;
+  try {
+    const clean = traineeIdOrId.trim();
+    const raw = sessionStorage.getItem(STORAGE_KEYS.UNLOCKED_STUDENTS);
+    let list: string[] = [];
+    if (raw) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed)) list = parsed;
+      } catch (e) {}
+    }
+    if (unlocked) {
+      if (!list.includes(clean)) {
+        list.push(clean);
+      }
+    } else {
+      list = list.filter((id) => id !== clean);
+    }
+    sessionStorage.setItem(STORAGE_KEYS.UNLOCKED_STUDENTS, JSON.stringify(list));
+  } catch (e) {
+    console.error(e);
+  }
+}
+
+export function lockStudent(traineeIdOrId: string): void {
+  setStudentUnlocked(traineeIdOrId, false);
+}
+
+export function lockAllStudents(): void {
+  try {
+    sessionStorage.removeItem(STORAGE_KEYS.UNLOCKED_STUDENTS);
+  } catch (e) {
+    console.error(e);
+  }
+}
+
 export function getStoredCohortStudents(): CohortStudentRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.COHORT_STUDENTS);
@@ -318,9 +411,16 @@ export function getStoredCohortStudents(): CohortStudentRecord[] {
             }
             seenIds.add(safeId);
 
+            const pin = item.studentPin || item.traineeInfo?.studentPin || computeDefaultStudentPin(traineeId, i);
+
             sanitized.push({
               ...item,
               id: safeId,
+              studentPin: pin,
+              traineeInfo: {
+                ...item.traineeInfo,
+                studentPin: pin,
+              },
             });
           }
 

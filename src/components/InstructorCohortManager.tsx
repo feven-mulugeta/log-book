@@ -46,6 +46,8 @@ import {
   getStoredPreceptors,
   saveStoredPreceptors,
   saveStoredCohortStudents,
+  getStudentPin,
+  computeDefaultStudentPin,
   DEFAULT_REGISTERED_PRECEPTORS,
   OFFICIAL_IMPORTED_PRECEPTORS,
   FULL_15_PRECEPTORS_ROSTER,
@@ -162,6 +164,51 @@ export function InstructorCohortManager({
     );
     setTimeout(() => setBatchImportNotification(null), 5000);
     setStudentToRotate(null);
+  };
+
+  // Student PIN management state
+  const [showStudentPins, setShowStudentPins] = useState(false);
+  const [studentToEditPin, setStudentToEditPin] = useState<CohortStudentRecord | null>(null);
+  const [newStudentPinValue, setNewStudentPinValue] = useState('');
+  const [studentPinEditError, setStudentPinEditError] = useState<string | null>(null);
+
+  const handleOpenEditStudentPin = (student: CohortStudentRecord) => {
+    setStudentToEditPin(student);
+    setNewStudentPinValue(getStudentPin(student));
+    setStudentPinEditError(null);
+  };
+
+  const handleSaveStudentPin = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!studentToEditPin) return;
+
+    if (!/^\d{4}$/.test(newStudentPinValue.trim())) {
+      setStudentPinEditError('Student PIN must be exactly 4 numeric digits.');
+      return;
+    }
+
+    const updatedStudent: CohortStudentRecord = {
+      ...studentToEditPin,
+      studentPin: newStudentPinValue.trim(),
+      traineeInfo: {
+        ...studentToEditPin.traineeInfo,
+        studentPin: newStudentPinValue.trim(),
+      },
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (onUpdateStudent) {
+      onUpdateStudent(updatedStudent);
+    } else {
+      const copy = cohortStudents.map((s) => (s.id === studentToEditPin.id ? updatedStudent : s));
+      saveStoredCohortStudents(copy);
+      cloudSync.syncCohort(copy);
+    }
+
+    cloudSync.syncStudent(updatedStudent, 'preceptor', 'Student PIN updated by educator');
+    setStudentToEditPin(null);
+    setBatchImportNotification(`Updated 4-digit PIN for ${studentToEditPin.traineeInfo.traineeName || 'Student'}!`);
+    setTimeout(() => setBatchImportNotification(null), 4000);
   };
 
   // Master institutional PIN
@@ -1121,6 +1168,7 @@ export function InstructorCohortManager({
     e.preventDefault();
     if (!newStudentName.trim() || !newStudentId.trim()) return;
 
+    const computedPin = computeDefaultStudentPin(newStudentId.trim(), cohortStudents.length);
     const newTrainee: TraineeInformation = {
       traineeName: newStudentName.trim(),
       traineeId: newStudentId.trim(),
@@ -1128,6 +1176,7 @@ export function InstructorCohortManager({
       assignedClinicalPreceptor: newPreceptor.trim(),
       trainingPeriodFrom: '2026-08-15',
       trainingPeriodTo: '2026-11-20',
+      studentPin: computedPin,
     };
 
     const newRecord: CohortStudentRecord = {
@@ -1135,6 +1184,7 @@ export function InstructorCohortManager({
       traineeInfo: newTrainee,
       detailedLogs: [],
       finalSignoff: BLANK_FINAL_SIGNOFF,
+      studentPin: computedPin,
       updatedAt: new Date().toISOString(),
     };
 
@@ -1708,6 +1758,17 @@ export function InstructorCohortManager({
                 )}
               </div>
             )}
+
+            {/* Show / Hide Student PINs Toggle */}
+            <button
+              type="button"
+              onClick={() => setShowStudentPins(!showStudentPins)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 border border-slate-300 rounded-xl transition-colors cursor-pointer shadow-2xs"
+              title="Reveal or mask personal student PINs in the roster table"
+            >
+              {showStudentPins ? <EyeOff className="w-3.5 h-3.5 text-slate-600" /> : <Eye className="w-3.5 h-3.5 text-slate-600" />}
+              <span>{showStudentPins ? 'Hide Student PINs' : 'Show Student PINs'}</span>
+            </button>
           </div>
         </div>
 
@@ -1832,6 +1893,7 @@ export function InstructorCohortManager({
               <tr>
                 <th className="py-2.5 px-3 font-bold">Student Name</th>
                 <th className="py-2.5 px-3 font-bold">Student ID</th>
+                <th className="py-2.5 px-3 font-bold text-center">Student PIN</th>
                 <th className="py-2.5 px-3 font-bold">Ward / Department</th>
                 <th className="py-2.5 px-3 font-bold">Assigned Preceptor</th>
                 <th className="py-2.5 px-3 font-bold text-center">Sessions Met</th>
@@ -1867,6 +1929,24 @@ export function InstructorCohortManager({
 
                     <td className="py-3 px-3 font-mono text-teal-900">
                       {student.traineeInfo.traineeId || '—'}
+                    </td>
+
+                    <td className="py-3 px-3 text-center">
+                      <div className="inline-flex items-center gap-1.5 justify-center">
+                        <span className="font-mono text-xs font-bold px-2 py-0.5 rounded bg-slate-100 border border-slate-200 text-teal-950">
+                          {showStudentPins ? getStudentPin(student) : '••••'}
+                        </span>
+                        {isLeadEducator && (
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditStudentPin(student)}
+                            className="p-1 text-slate-400 hover:text-teal-900 rounded hover:bg-slate-200 cursor-pointer"
+                            title={`Reset / Edit 4-digit PIN for ${student.traineeInfo.traineeName || 'Trainee'}`}
+                          >
+                            <Edit2 className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </td>
 
                     <td className="py-3 px-3 text-slate-700">
@@ -2978,6 +3058,97 @@ export function InstructorCohortManager({
                 >
                   <ArrowRightLeft className="w-3.5 h-3.5" />
                   <span>Confirm Rotation &amp; Assign Preceptor</span>
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Edit / Reset Student Security PIN Modal (Instructors) */}
+      {studentToEditPin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+          <div className="bg-white rounded-2xl max-w-md w-full shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-slate-900 text-white flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Key className="w-4 h-4 text-teal-400" />
+                <h3 className="text-sm font-bold">Edit Student Access PIN</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setStudentToEditPin(null)}
+                className="text-slate-400 hover:text-white p-1 rounded-lg"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveStudentPin} className="p-5 space-y-4 text-xs">
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-1">
+                <p className="font-bold text-teal-950">
+                  {studentToEditPin.traineeInfo.traineeName || 'Trainee'}
+                </p>
+                <p className="text-[11px] text-teal-800 font-mono">
+                  ID: {studentToEditPin.traineeInfo.traineeId || 'Pending'} · Ward: {studentToEditPin.traineeInfo.clinicalDepartmentWard}
+                </p>
+              </div>
+
+              <div>
+                <label className="block font-bold text-slate-700 mb-1">
+                  • 4-Digit Personal Student PIN:
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    inputMode="numeric"
+                    maxLength={4}
+                    required
+                    value={newStudentPinValue}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, '').slice(0, 4);
+                      setNewStudentPinValue(val);
+                      setStudentPinEditError(null);
+                    }}
+                    placeholder="e.g. 5226"
+                    className="w-36 px-3 py-2 rounded-xl border border-slate-300 font-mono text-base font-bold tracking-widest text-center focus:outline-none focus:ring-2 focus:ring-teal-700"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const def = computeDefaultStudentPin(studentToEditPin.traineeInfo.traineeId || studentToEditPin.id);
+                      setNewStudentPinValue(def);
+                    }}
+                    className="px-2.5 py-2 text-[11px] font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl transition-colors"
+                    title="Compute default 4-digit PIN based on Student ID"
+                  >
+                    Reset to Default ID PIN
+                  </button>
+                </div>
+                <p className="text-[11px] text-slate-500 mt-1">
+                  Students use this code to access their logbook on shared clinic tablets or ward computers.
+                </p>
+              </div>
+
+              {studentPinEditError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-xl font-medium">
+                  {studentPinEditError}
+                </div>
+              )}
+
+              <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => setStudentToEditPin(null)}
+                  className="px-3.5 py-2 font-semibold text-slate-600 hover:bg-slate-100 rounded-xl transition-colors cursor-pointer"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="px-4 py-2 font-bold text-white bg-teal-800 hover:bg-teal-900 rounded-xl transition-colors shadow-2xs cursor-pointer flex items-center gap-1.5"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Save Student PIN</span>
                 </button>
               </div>
             </form>

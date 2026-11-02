@@ -114,8 +114,8 @@ export function ShareAccessModal({ isOpen, onClose }: ShareAccessModalProps) {
                     1
                   </div>
                   <span className="font-bold text-slate-900 text-xs">Trainee / Student Link</span>
-                  <span className="text-[10px] bg-teal-100 text-teal-800 font-semibold px-2 py-0.5 rounded-full">
-                    No PIN Required
+                  <span className="text-[10px] bg-teal-100 text-teal-900 font-semibold px-2 py-0.5 rounded-full border border-teal-200">
+                    🔒 Protected by Individual Student PIN
                   </span>
                 </div>
                 <button
@@ -136,8 +136,8 @@ export function ShareAccessModal({ isOpen, onClose }: ShareAccessModalProps) {
                   )}
                 </button>
               </div>
-              <p className="text-[11px] text-slate-600">
-                Share this link with your nursing trainees. They can log clinical activities, enter reflections, attach evidence, and view their tracking matrix. They <strong>cannot sign off competencies or change instructor rosters</strong>.
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Share this link with your nursing trainees. Each of the 52 students has their own <strong>confidential 4-digit Student PIN</strong> (derived from student ID e.g. <code>5226</code> for NCEP-052-26, or custom). <strong>Other students cannot view, modify, or manipulate their peers&apos; records</strong> on shared ward computers or tablets without entering that specific student&apos;s PIN.
               </p>
               <div className="font-mono text-[11px] text-slate-600 bg-white p-2 rounded border border-slate-200 select-all truncate">
                 {traineeUrl}
@@ -258,10 +258,10 @@ export function ShareAccessModal({ isOpen, onClose }: ShareAccessModalProps) {
               <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-1">
                 <span className="font-bold text-slate-900 block flex items-center gap-1">
                   <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  4. Trainee Guard
+                  4. Student PIN Protection
                 </span>
                 <span>
-                  Trainees cannot switch to Preceptor/Lead Educator mode or access administrative tabs without an authorized staff PIN.
+                  Every student has their own unique 4-digit PIN. Students cannot manipulate or tamper with another student&apos;s logbook on shared devices without their specific PIN. Students can change their personal PIN anytime.
                 </span>
               </div>
             </div>

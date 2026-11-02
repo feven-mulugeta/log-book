@@ -268,13 +268,22 @@ export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
                   <div className="p-2.5 bg-teal-50/50 rounded-lg border border-teal-100">
                     <strong className="text-teal-950 font-bold block">1. Top Navigation &amp; Header Bar</strong>
                     <p className="text-slate-600 mt-0.5">
-                      Houses your active name, ward, program title, Role Selector dropdown, &quot;Word Manuals&quot; button, and &quot;Print PDF&quot; shortcut.
+                      Houses your active name, ward, program title, Role Selector dropdown, Student PIN lock/unlock indicator, &quot;Word Manuals&quot; button, and &quot;Print PDF&quot; shortcut.
                     </p>
                   </div>
                   <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">
                     <strong className="text-slate-900 font-bold block">2. Tab 1: Trainee Information &amp; Instructions</strong>
                     <p className="text-slate-600 mt-0.5">
-                      Enter your legal student name, university ID, current ward, and assigned preceptor. At the bottom, access the 4 storage controls: <em>Start Fresh, Restore Demo, Backup Logbook (.json), and Restore from Backup</em>.
+                      Enter your legal student name, university ID, current ward, and assigned preceptor. Includes <strong>Personal Student PIN Security</strong> (unlock profile, change 4-digit PIN, and lock session when leaving shared hospital devices), plus storage controls: <em>Start Fresh, Restore Demo, Backup Logbook (.json), and Restore from Backup</em>.
+                    </p>
+                  </div>
+                  <div className="p-2.5 bg-emerald-50/60 rounded-lg border border-emerald-200/80">
+                    <strong className="text-emerald-950 font-bold block flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-emerald-700" />
+                      <span>Individual Student PIN Protection (Anti-Tampering)</span>
+                    </strong>
+                    <p className="text-emerald-900 text-[11px] mt-0.5 leading-relaxed">
+                      Every enrolled student in the 52-student cohort has a personal 4-digit PIN (default derived from Student ID e.g. <code>NCEP-052-26</code> is PIN <code>5226</code>). Other students cannot access, edit, or tamper with your logbook without your PIN. You can change your PIN anytime or lock your session before walking away from shared ward computers.
                     </p>
                   </div>
                   <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200">

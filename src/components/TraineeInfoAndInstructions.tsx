@@ -14,9 +14,13 @@ import {
   Trash2,
   CheckCircle2,
   Users,
+  KeyRound,
+  Lock,
+  Unlock,
+  ShieldAlert,
 } from 'lucide-react';
 import { TraineeInformation, CohortStudentRecord } from '../types/nursing';
-import { getStoredPreceptors } from '../utils/storage';
+import { getStoredPreceptors, UserRole } from '../utils/storage';
 
 interface TraineeInfoAndInstructionsProps {
   traineeInfo: TraineeInformation;
@@ -29,6 +33,11 @@ interface TraineeInfoAndInstructionsProps {
   onImportBackupFile: (e: React.ChangeEvent<HTMLInputElement>) => void;
   cohortStudents?: CohortStudentRecord[];
   onSelectStudent?: (student: CohortStudentRecord) => void;
+  userRole?: UserRole;
+  isCurrentStudentUnlocked?: boolean;
+  onOpenUnlockModal?: () => void;
+  onOpenChangePinModal?: () => void;
+  onLockSession?: () => void;
 }
 
 export function TraineeInfoAndInstructions({
@@ -42,6 +51,11 @@ export function TraineeInfoAndInstructions({
   onImportBackupFile,
   cohortStudents = [],
   onSelectStudent,
+  userRole = 'trainee',
+  isCurrentStudentUnlocked = false,
+  onOpenUnlockModal,
+  onOpenChangePinModal,
+  onLockSession,
 }: TraineeInfoAndInstructionsProps) {
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<TraineeInformation>(traineeInfo);
@@ -50,6 +64,14 @@ export function TraineeInfoAndInstructions({
   useEffect(() => {
     setFormData(traineeInfo);
   }, [traineeInfo]);
+
+  const handleEditClick = () => {
+    if (userRole === 'trainee' && !isCurrentStudentUnlocked && onOpenUnlockModal) {
+      onOpenUnlockModal();
+      return;
+    }
+    setIsEditing(!isEditing);
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -103,6 +125,77 @@ export function TraineeInfoAndInstructions({
             </div>
           )}
 
+          {/* Student PIN Protection & Session Security Banner */}
+          <div className="p-4 rounded-xl border flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs bg-slate-50/90 border-slate-200 shadow-2xs">
+            <div className="flex items-start sm:items-center gap-3">
+              <div
+                className={`p-2 rounded-xl shrink-0 ${
+                  isCurrentStudentUnlocked
+                    ? 'bg-emerald-100 text-emerald-800'
+                    : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {isCurrentStudentUnlocked ? <Unlock className="w-4 h-4" /> : <Lock className="w-4 h-4" />}
+              </div>
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-bold text-slate-900">
+                    Individual Student PIN Protection
+                  </span>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                      isCurrentStudentUnlocked
+                        ? 'bg-emerald-100 text-emerald-900 border border-emerald-300'
+                        : 'bg-amber-100 text-amber-950 border border-amber-300'
+                    }`}
+                  >
+                    {isCurrentStudentUnlocked ? '🔓 Logbook Unlocked' : '🔒 PIN Protected'}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-600 mt-0.5">
+                  {isCurrentStudentUnlocked
+                    ? `Session authenticated for ${traineeInfo.traineeName || 'Trainee'}. Other students cannot alter your portfolio without your 4-digit PIN.`
+                    : `Enter your personal 4-digit PIN to edit records or switch between trainees on this device.`}
+                </p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto shrink-0 flex-wrap">
+              {!isCurrentStudentUnlocked && onOpenUnlockModal && (
+                <button
+                  type="button"
+                  onClick={onOpenUnlockModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-white bg-teal-800 hover:bg-teal-900 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-teal-200" />
+                  <span>Enter PIN to Unlock</span>
+                </button>
+              )}
+              {onOpenChangePinModal && (
+                <button
+                  type="button"
+                  onClick={onOpenChangePinModal}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-teal-900 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-xl transition-colors cursor-pointer"
+                  title="Change your personal 4-digit Student PIN"
+                >
+                  <KeyRound className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Change My PIN</span>
+                </button>
+              )}
+              {isCurrentStudentUnlocked && onLockSession && (
+                <button
+                  type="button"
+                  onClick={onLockSession}
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl transition-colors cursor-pointer"
+                  title="Lock session when stepping away from a shared hospital device"
+                >
+                  <Lock className="w-3.5 h-3.5 text-slate-500" />
+                  <span>Lock Session</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           <div className="flex items-center justify-between pb-3 border-b border-slate-200">
             <div>
               <h3 className="text-sm font-bold uppercase tracking-wider text-slate-900 font-sans">
@@ -114,7 +207,7 @@ export function TraineeInfoAndInstructions({
             </div>
             <button
               type="button"
-              onClick={() => setIsEditing(!isEditing)}
+              onClick={handleEditClick}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-50 text-slate-700 transition-colors"
             >
               <Edit3 className="w-3.5 h-3.5" />

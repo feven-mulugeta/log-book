@@ -5,6 +5,7 @@ export interface TraineeInformation {
   assignedClinicalPreceptor: string;
   trainingPeriodFrom: string;
   trainingPeriodTo: string;
+  studentPin?: string;
 }
 
 export type SubCompetencyId =
@@ -117,6 +118,7 @@ export interface CohortStudentRecord {
   detailedLogs: DetailedActivityLogSheet[];
   finalSignoff: FinalCompetencySignoff;
   updatedAt: string;
+  studentPin?: string;
 }
 
 export interface RegisteredPreceptor {

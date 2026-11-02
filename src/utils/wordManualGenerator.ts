@@ -284,8 +284,8 @@ export async function generateStudentManualDocx(): Promise<Blob> {
               ],
               [
                 'Tab 1: Trainee Information & Instructions',
-                'Identity registration, institutional instructions, and data persistence controls.',
-                'Fill in personal ID, ward, assigned mentor, training dates. Perform weekly backups and restore data.',
+                'Identity registration, individual student PIN security, instructions, and data persistence controls.',
+                'Fill in personal ID, ward, assigned mentor. Manage your confidential 4-digit Student PIN to prevent peer manipulation. Lock your session when stepping away from shared hospital computers.',
               ],
               [
                 'Tab 2: Part I - Tracking Matrix',

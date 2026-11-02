@@ -18,6 +18,8 @@ import {
   FileText,
   Share2,
   Lock,
+  Unlock,
+  KeyRound,
 } from 'lucide-react';
 import {
   TraineeInformation,
@@ -42,6 +44,11 @@ import {
   FULL_15_PRECEPTORS_ROSTER,
   resetStorageToBlank,
   resetStorageToSample,
+  isStudentUnlocked,
+  setStudentUnlocked,
+  lockStudent,
+  lockAllStudents,
+  getStudentPin,
   UserRole,
 } from './utils/storage';
 import { NCEP_SESSIONS_DEFINITIONS } from './data/ncepData';
@@ -55,6 +62,8 @@ import { NcepEvidenceVault } from './components/NcepEvidenceVault';
 import { NcepAcademicPrintView } from './components/NcepAcademicPrintView';
 import { UserManualModal } from './components/UserManualModal';
 import { PreceptorPinModal } from './components/PreceptorPinModal';
+import { StudentPinModal } from './components/StudentPinModal';
+import { StudentChangePinModal } from './components/StudentChangePinModal';
 import { ShareAccessModal } from './components/ShareAccessModal';
 import { cloudSync } from './utils/cloudSync';
 import { CloudSyncIndicator } from './components/CloudSyncIndicator';
@@ -81,6 +90,13 @@ export default function App() {
   const [isRoleAuthModalOpen, setIsRoleAuthModalOpen] = useState<boolean>(false);
   const [targetRoleForAuth, setTargetRoleForAuth] = useState<'preceptor' | 'lead_educator'>('preceptor');
   const [pendingTabAfterAuth, setPendingTabAfterAuth] = useState<TabType | null>(null);
+
+  // Individual Student PIN Security Modal state
+  const [isStudentPinModalOpen, setIsStudentPinModalOpen] = useState<boolean>(false);
+  const [studentToUnlock, setStudentToUnlock] = useState<CohortStudentRecord | null>(null);
+  const [pendingStudentTargetTab, setPendingStudentTargetTab] = useState<TabType | undefined>(undefined);
+  const [isChangePinModalOpen, setIsChangePinModalOpen] = useState<boolean>(false);
+  const [, setSessionUnlockCounter] = useState<number>(0);
 
   // Flag to avoid echo loop when applying remote updates
   const isRemoteUpdateRef = useRef(false);
@@ -256,8 +272,18 @@ export default function App() {
     setActiveTab(tabId);
   };
 
-  // Cohort handlers
+  // Cohort handlers & Student PIN security
   const handleSelectCohortStudent = (student: CohortStudentRecord, targetTab?: TabType) => {
+    const studentKey = student.traineeInfo.traineeId || student.id;
+
+    // In Trainee mode, enforce 4-digit student PIN if not yet unlocked in this session
+    if (userRole === 'trainee' && !isStudentUnlocked(studentKey)) {
+      setStudentToUnlock(student);
+      setPendingStudentTargetTab(targetTab);
+      setIsStudentPinModalOpen(true);
+      return;
+    }
+
     // Save current active student work into cohort list
     setCohortStudents((prev) =>
       prev.map((s) => {
@@ -283,6 +309,71 @@ export default function App() {
     if (targetTab) {
       setActiveTab(targetTab);
     }
+  };
+
+  const handleStudentUnlockSuccess = () => {
+    setIsStudentPinModalOpen(false);
+    setSessionUnlockCounter((c) => c + 1);
+
+    if (studentToUnlock) {
+      // Save current active student work into cohort list
+      setCohortStudents((prev) =>
+        prev.map((s) => {
+          if (s.id === currentStudentRosterId || s.traineeInfo.traineeId === traineeInfo.traineeId) {
+            return {
+              ...s,
+              traineeInfo,
+              detailedLogs,
+              finalSignoff,
+              updatedAt: new Date().toISOString(),
+            };
+          }
+          return s;
+        })
+      );
+
+      // Switch to selected student
+      setTraineeInfo(studentToUnlock.traineeInfo);
+      setDetailedLogs(studentToUnlock.detailedLogs);
+      setFinalSignoff(studentToUnlock.finalSignoff);
+      setCurrentStudentRosterId(studentToUnlock.id);
+
+      if (pendingStudentTargetTab) {
+        setActiveTab(pendingStudentTargetTab);
+      }
+      setStudentToUnlock(null);
+      setPendingStudentTargetTab(undefined);
+    }
+  };
+
+  const handleOpenUnlockForCurrentStudent = () => {
+    setStudentToUnlock(currentStudentRecord);
+    setPendingStudentTargetTab(undefined);
+    setIsStudentPinModalOpen(true);
+  };
+
+  const handleLockCurrentStudentSession = () => {
+    const studentKey = currentStudentRecord.traineeInfo.traineeId || currentStudentRecord.id;
+    lockStudent(studentKey);
+    setSessionUnlockCounter((c) => c + 1);
+  };
+
+  const handlePinChangedSuccess = (newPin: string) => {
+    setTraineeInfo((prev) => ({ ...prev, studentPin: newPin }));
+    setCohortStudents((prev) =>
+      prev.map((s) => {
+        if (s.id === currentStudentRosterId || s.traineeInfo.traineeId === traineeInfo.traineeId) {
+          return {
+            ...s,
+            studentPin: newPin,
+            traineeInfo: { ...s.traineeInfo, studentPin: newPin },
+            updatedAt: new Date().toISOString(),
+          };
+        }
+        return s;
+      })
+    );
+    setSessionUnlockCounter((c) => c + 1);
   };
 
   const handleAddCohortStudent = (newRecord: CohortStudentRecord) => {
@@ -705,9 +796,29 @@ export default function App() {
                     Core Competency 1
                   </span>
                 </div>
-                <p className="text-[11px] text-slate-500 hidden sm:block">
-                  Trainee: {traineeInfo.traineeName} ({traineeInfo.traineeId}) · {traineeInfo.clinicalDepartmentWard}
-                </p>
+                <div className="text-[11px] text-slate-500 hidden sm:flex sm:items-center sm:gap-2">
+                  <span>Trainee: {traineeInfo.traineeName} ({traineeInfo.traineeId}) · {traineeInfo.clinicalDepartmentWard}</span>
+                  {userRole === 'trainee' && (
+                    <button
+                      type="button"
+                      onClick={handleOpenUnlockForCurrentStudent}
+                      className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 cursor-pointer"
+                      title="Student PIN Security Status: Click to unlock or verify"
+                    >
+                      {isStudentUnlocked(currentStudentRecord.traineeInfo.traineeId || currentStudentRecord.id) ? (
+                        <>
+                          <Unlock className="w-3 h-3 text-emerald-600" />
+                          <span className="text-emerald-700">PIN Verified</span>
+                        </>
+                      ) : (
+                        <>
+                          <Lock className="w-3 h-3 text-amber-600" />
+                          <span className="text-amber-700">Enter PIN</span>
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
               </div>
             </div>
 
@@ -847,6 +958,14 @@ export default function App() {
               onImportBackupFile={handleImportBackupFile}
               cohortStudents={cohortStudents}
               onSelectStudent={handleSelectCohortStudent}
+              userRole={userRole}
+              isCurrentStudentUnlocked={
+                userRole !== 'trainee' ||
+                isStudentUnlocked(currentStudentRecord.traineeInfo.traineeId || currentStudentRecord.id)
+              }
+              onOpenUnlockModal={handleOpenUnlockForCurrentStudent}
+              onOpenChangePinModal={() => setIsChangePinModalOpen(true)}
+              onLockSession={handleLockCurrentStudentSession}
             />
           )}
 
@@ -960,6 +1079,32 @@ export default function App() {
             ? 'Access to the Instructor & Cohorts portal is restricted to Lead Clinical Educators. Enter the institutional master passcode.'
             : 'Access to Preceptor Mode is restricted to assigned hospital mentors. Enter your confidential 4-digit PIN.'
         }
+      />
+
+      {/* Student Personal PIN Verification Modal (Protects against peer tampering) */}
+      <StudentPinModal
+        isOpen={isStudentPinModalOpen}
+        student={studentToUnlock || currentStudentRecord}
+        onSuccess={handleStudentUnlockSuccess}
+        onCancel={() => {
+          setIsStudentPinModalOpen(false);
+          setStudentToUnlock(null);
+          setPendingStudentTargetTab(undefined);
+        }}
+        onPreceptorOverride={() => {
+          setIsStudentPinModalOpen(false);
+          setTargetRoleForAuth('preceptor');
+          setIsRoleAuthModalOpen(true);
+        }}
+      />
+
+      {/* Student Self-Service PIN Change Modal */}
+      <StudentChangePinModal
+        isOpen={isChangePinModalOpen}
+        student={currentStudentRecord}
+        traineeInfo={traineeInfo}
+        onClose={() => setIsChangePinModalOpen(false)}
+        onPinChanged={handlePinChangedSuccess}
       />
     </div>
   );
