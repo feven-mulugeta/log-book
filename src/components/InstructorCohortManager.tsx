@@ -2155,21 +2155,36 @@ export function InstructorCohortManager({
                 <label className="block font-bold text-slate-700 mb-1">
                   Assigned Clinical Preceptor / Mentor: <span className="font-normal text-slate-400 text-[10px]">(Optional — leave blank to fill later)</span>
                 </label>
-                <input
-                  type="text"
-                  list="cohort-preceptors-list"
-                  placeholder="Select preceptor or leave blank"
-                  value={newPreceptor}
-                  onChange={(e) => setNewPreceptor(e.target.value)}
-                  className="w-full px-3 py-2 rounded-xl border border-slate-300"
-                />
-                <datalist id="cohort-preceptors-list">
+                <select
+                  value={preceptorsList.some((p) => p.name === newPreceptor) ? newPreceptor : ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setNewPreceptor(val);
+                    if (val && !newWard) {
+                      const matched = preceptorsList.find((p) => p.name === val);
+                      if (matched?.wardDepartment) {
+                        setNewWard(matched.wardDepartment);
+                      }
+                    }
+                  }}
+                  className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-700"
+                >
+                  <option value="">-- Leave Blank or Select Preceptor from List --</option>
                   {preceptorsList.map((p, pIdx) => (
                     <option key={`prec-opt-${p.id}-${pIdx}`} value={p.name}>
-                      {p.title} ({p.wardDepartment})
+                      {p.name} — {p.title} ({p.wardDepartment})
                     </option>
                   ))}
-                </datalist>
+                </select>
+                <div className="mt-1.5">
+                  <input
+                    type="text"
+                    placeholder="Or type custom / outside mentor name directly..."
+                    value={newPreceptor}
+                    onChange={(e) => setNewPreceptor(e.target.value)}
+                    className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-200 text-slate-700 focus:outline-none focus:ring-1 focus:ring-teal-700"
+                  />
+                </div>
               </div>
 
               <div className="flex items-center justify-end gap-2 pt-3 border-t border-slate-200">

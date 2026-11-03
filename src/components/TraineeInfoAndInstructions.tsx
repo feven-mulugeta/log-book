@@ -63,9 +63,21 @@ export function TraineeInfoAndInstructions({
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<TraineeInformation>(traineeInfo);
   const [confirmBlank, setConfirmBlank] = useState(false);
+  const registeredPreceptors = getStoredPreceptors();
+  const [isCustomPreceptor, setIsCustomPreceptor] = useState(false);
 
   useEffect(() => {
     setFormData(traineeInfo);
+    if (
+      traineeInfo.assignedClinicalPreceptor &&
+      !registeredPreceptors.some(
+        (p) => p.name.trim().toLowerCase() === traineeInfo.assignedClinicalPreceptor.trim().toLowerCase()
+      )
+    ) {
+      setIsCustomPreceptor(true);
+    } else {
+      setIsCustomPreceptor(false);
+    }
   }, [traineeInfo]);
 
   const handleEditClick = () => {
@@ -277,27 +289,96 @@ export function TraineeInfoAndInstructions({
                   </datalist>
                 </div>
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    • Assigned Clinical Preceptor / Mentor:
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    list="registered-preceptors-list"
-                    placeholder="Type name or select from directory"
-                    value={formData.assignedClinicalPreceptor}
-                    onChange={(e) =>
-                      setFormData({ ...formData, assignedClinicalPreceptor: e.target.value })
-                    }
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700"
-                  />
-                  <datalist id="registered-preceptors-list">
-                    {getStoredPreceptors().map((p) => (
-                      <option key={p.id} value={p.name}>
-                        {p.title} ({p.wardDepartment})
-                      </option>
-                    ))}
-                  </datalist>
+                  <div className="flex items-center justify-between mb-1">
+                    <label className="block text-xs font-bold text-slate-700">
+                      • Assigned Clinical Preceptor / Mentor:
+                    </label>
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomPreceptor(!isCustomPreceptor)}
+                      className="text-[11px] text-teal-700 hover:text-teal-900 font-semibold underline underline-offset-2 transition-colors cursor-pointer"
+                    >
+                      {isCustomPreceptor ? '← Pick from Preceptor List' : '✍️ Type Custom / Visiting Name'}
+                    </button>
+                  </div>
+
+                  {!isCustomPreceptor ? (
+                    <div className="space-y-1">
+                      <select
+                        value={
+                          registeredPreceptors.some(
+                            (p) =>
+                              p.name.trim().toLowerCase() ===
+                              (formData.assignedClinicalPreceptor || '').trim().toLowerCase()
+                          )
+                            ? formData.assignedClinicalPreceptor
+                            : formData.assignedClinicalPreceptor
+                            ? '__custom__'
+                            : ''
+                        }
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val === '__custom__') {
+                            setIsCustomPreceptor(true);
+                          } else if (val === '') {
+                            setFormData({ ...formData, assignedClinicalPreceptor: '' });
+                          } else {
+                            const found = registeredPreceptors.find((p) => p.name === val);
+                            setFormData({
+                              ...formData,
+                              assignedClinicalPreceptor: val,
+                              clinicalDepartmentWard:
+                                formData.clinicalDepartmentWard?.trim()
+                                  ? formData.clinicalDepartmentWard
+                                  : (found?.wardDepartment || ''),
+                            });
+                          }
+                        }}
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-teal-700 font-medium text-slate-800"
+                      >
+                        <option value="">-- Select Assigned Preceptor / Mentor from List --</option>
+                        {registeredPreceptors.map((p) => (
+                          <option key={p.id} value={p.name}>
+                            {p.name} — {p.title} ({p.wardDepartment})
+                          </option>
+                        ))}
+                        <option value="__custom__">✍️ Other / Enter Custom Preceptor Name...</option>
+                      </select>
+                      <p className="text-[10px] text-slate-500 italic">
+                        Selecting from the directory automatically pairs their assigned ward if your ward field is empty.
+                      </p>
+                    </div>
+                  ) : (
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        required
+                        placeholder="Type preceptor or mentor name (e.g. Sister Tigist, BSc)"
+                        value={formData.assignedClinicalPreceptor}
+                        onChange={(e) =>
+                          setFormData({ ...formData, assignedClinicalPreceptor: e.target.value })
+                        }
+                        className="w-full px-3 py-2 text-xs rounded-xl border border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-700 bg-teal-50/20 font-medium"
+                      />
+                      <div className="flex items-center justify-between text-[11px] text-slate-500">
+                        <span>Custom preceptor name active</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setIsCustomPreceptor(false);
+                            if (
+                              !registeredPreceptors.some((p) => p.name === formData.assignedClinicalPreceptor)
+                            ) {
+                              setFormData({ ...formData, assignedClinicalPreceptor: '' });
+                            }
+                          }}
+                          className="text-teal-700 font-semibold hover:underline"
+                        >
+                          Reset to dropdown list
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
