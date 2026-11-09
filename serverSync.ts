@@ -2117,17 +2117,29 @@ function loadStoreFromDisk() {
   saveStoreToDisk();
 }
 
-function saveStoreToDisk() {
-  try {
-    ensureDataDirectory();
-    inMemoryStore.lastUpdated = new Date().toISOString();
-    fs.writeFileSync(DATA_FILE, JSON.stringify(inMemoryStore, null, 2), 'utf-8');
-  } catch (err) {
-    console.error('[CloudSync] Failed to write store to disk:', err);
+let diskSaveTimer: any = null;
+function saveStoreToDisk(immediate = false) {
+  if (diskSaveTimer) {
+    clearTimeout(diskSaveTimer);
+    diskSaveTimer = null;
+  }
+  const doSave = () => {
+    try {
+      ensureDataDirectory();
+      inMemoryStore.lastUpdated = new Date().toISOString();
+      fs.writeFileSync(DATA_FILE, JSON.stringify(inMemoryStore, null, 2), 'utf-8');
+    } catch (err) {
+      console.error('[CloudSync] Failed to write store to disk:', err);
+    }
+  };
+  if (immediate) {
+    doSave();
+  } else {
+    diskSaveTimer = setTimeout(doSave, 600);
   }
 }
 
-// Broadcast helper to all connected clients
+// Broadcast helper to all connected clients (except optionally the sender)
 export function broadcastToAll(payload: any, excludeWs?: WebSocket) {
   const messageStr = JSON.stringify(payload);
   connectedClients.forEach((client) => {
@@ -2165,12 +2177,6 @@ export function logSyncEvent(
     recentEvents.pop();
   }
 
-  // Broadcast event to all WebSocket clients
-  broadcastToAll({
-    type: 'SYNC_EVENT',
-    event,
-  });
-
   return event;
 }
 
@@ -2183,7 +2189,13 @@ export function getSyncState() {
   };
 }
 
-export function updateOrSaveStudent(student: any, source: 'trainee' | 'preceptor' = 'trainee', message?: string) {
+export function updateOrSaveStudent(
+  student: any,
+  source: 'trainee' | 'preceptor' = 'trainee',
+  message?: string,
+  excludeWs?: WebSocket,
+  senderClientId?: string
+) {
   if (!student || (!student.id && !student.traineeInfo?.traineeId)) {
     throw new Error('Invalid student data');
   }
@@ -2222,19 +2234,28 @@ export function updateOrSaveStudent(student: any, source: 'trainee' | 'preceptor
     { student: updatedRecord }
   );
 
-  // Broadcast the updated student to all clients
-  broadcastToAll({
-    type: 'STUDENT_UPDATED',
-    student: updatedRecord,
-    source,
-    event,
-    timestamp: new Date().toISOString(),
-  });
+  // Broadcast the updated student to other clients (never echo to sender)
+  broadcastToAll(
+    {
+      type: 'STUDENT_UPDATED',
+      student: updatedRecord,
+      source,
+      event,
+      senderClientId,
+      timestamp: new Date().toISOString(),
+    },
+    excludeWs
+  );
 
   return { student: updatedRecord, event };
 }
 
-export function updateCohortRoster(cohort: any[], source: 'trainee' | 'preceptor' = 'preceptor') {
+export function updateCohortRoster(
+  cohort: any[],
+  source: 'trainee' | 'preceptor' = 'preceptor',
+  excludeWs?: WebSocket,
+  senderClientId?: string
+) {
   if (!Array.isArray(cohort)) return inMemoryStore.cohortStudents;
 
   const seenIds = new Set<string>();
@@ -2256,17 +2277,25 @@ export function updateCohortRoster(cohort: any[], source: 'trainee' | 'preceptor
     `Cohort roster synced with ${sanitized.length} students`
   );
 
-  broadcastToAll({
-    type: 'COHORT_UPDATED',
-    cohortStudents: sanitized,
-    source,
-    event,
-  });
+  broadcastToAll(
+    {
+      type: 'COHORT_UPDATED',
+      cohortStudents: sanitized,
+      source,
+      event,
+      senderClientId,
+    },
+    excludeWs
+  );
 
   return inMemoryStore.cohortStudents;
 }
 
-export function updatePreceptorsRoster(preceptors: any[]) {
+export function updatePreceptorsRoster(
+  preceptors: any[],
+  excludeWs?: WebSocket,
+  senderClientId?: string
+) {
   if (!Array.isArray(preceptors)) return inMemoryStore.preceptors;
 
   inMemoryStore.preceptors = preceptors;
@@ -2278,11 +2307,15 @@ export function updatePreceptorsRoster(preceptors: any[]) {
     `Preceptors directory updated (${preceptors.length} instructors)`
   );
 
-  broadcastToAll({
-    type: 'PRECEPTORS_UPDATED',
-    preceptors,
-    event,
-  });
+  broadcastToAll(
+    {
+      type: 'PRECEPTORS_UPDATED',
+      preceptors,
+      event,
+      senderClientId,
+    },
+    excludeWs
+  );
 
   return inMemoryStore.preceptors;
 }
@@ -2336,11 +2369,11 @@ export function setupRealtimeWebSocket(server: http.Server) {
         const payload = JSON.parse(data.toString());
 
         if (payload.type === 'SYNC_STUDENT') {
-          updateOrSaveStudent(payload.student, payload.source || 'trainee', payload.message);
+          updateOrSaveStudent(payload.student, payload.source || 'trainee', payload.message, ws, payload.clientId);
         } else if (payload.type === 'SYNC_COHORT') {
-          updateCohortRoster(payload.cohortStudents, payload.source || 'preceptor');
+          updateCohortRoster(payload.cohortStudents, payload.source || 'preceptor', ws, payload.clientId);
         } else if (payload.type === 'SYNC_PRECEPTORS') {
-          updatePreceptorsRoster(payload.preceptors);
+          updatePreceptorsRoster(payload.preceptors, ws, payload.clientId);
         } else if (payload.type === 'PING') {
           ws.send(JSON.stringify({ type: 'PONG', timestamp: new Date().toISOString() }));
         }

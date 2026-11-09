@@ -17,6 +17,19 @@ type PreceptorUpdateCallback = (preceptors: RegisteredPreceptor[]) => void;
 type StatusCallback = (status: SyncStatus, liveDevicesCount: number) => void;
 type NotificationCallback = (notif: SyncNotification) => void;
 
+// Consistent unique client ID per browser session to prevent self-echo and infinite sync loops
+export const CLIENT_ID =
+  typeof window !== 'undefined'
+    ? (() => {
+        let id = sessionStorage.getItem('ncep_sync_client_id');
+        if (!id) {
+          id = `cli_${Date.now()}_${Math.random().toString(36).slice(2, 9)}`;
+          sessionStorage.setItem('ncep_sync_client_id', id);
+        }
+        return id;
+      })()
+    : 'server_env';
+
 class CloudSyncService {
   private ws: WebSocket | null = null;
   private status: SyncStatus = 'connecting';
@@ -25,6 +38,8 @@ class CloudSyncService {
   private pollTimer: any = null;
   private lastPollTimestamp = new Date().toISOString();
   private debounceTimers: Record<string, any> = {};
+  private isInitialized = false;
+  private processedEventIds = new Set<string>();
 
   private studentUpdateListeners = new Set<StudentUpdateCallback>();
   private cohortUpdateListeners = new Set<CohortUpdateCallback>();
@@ -39,6 +54,8 @@ class CloudSyncService {
   }
 
   public init() {
+    if (this.isInitialized) return;
+    this.isInitialized = true;
     this.connectWebSocket();
     this.startHttpPollingFallback();
     // Initial fetch from server
@@ -47,6 +64,21 @@ class CloudSyncService {
 
   private connectWebSocket() {
     if (typeof window === 'undefined') return;
+
+    // If already open or connecting, do not create duplicate socket
+    if (this.ws && (this.ws.readyState === WebSocket.OPEN || this.ws.readyState === WebSocket.CONNECTING)) {
+      return;
+    }
+
+    if (this.ws) {
+      try {
+        this.ws.onclose = null;
+        this.ws.onerror = null;
+        this.ws.onmessage = null;
+        this.ws.close();
+      } catch (e) {}
+      this.ws = null;
+    }
 
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -96,14 +128,31 @@ class CloudSyncService {
   }
 
   private startHttpPollingFallback() {
-    // Poll events every 4 seconds for maximum reliability across proxy environments
+    if (this.pollTimer) {
+      clearInterval(this.pollTimer);
+      this.pollTimer = null;
+    }
+
+    // Only poll when WebSocket is NOT connected (as fallback across restrictive proxies)
     this.pollTimer = setInterval(async () => {
+      if (this.isWsConnected()) {
+        return; // WebSocket delivers events instantly; no need to poll
+      }
+
       try {
         const res = await fetch(`/api/sync/events?since=${encodeURIComponent(this.lastPollTimestamp)}`);
         if (res.ok) {
           const body = await res.json();
           if (body.events && body.events.length > 0) {
             body.events.forEach((ev: any) => {
+              if (ev.senderClientId === CLIENT_ID) return;
+              if (this.processedEventIds.has(ev.id)) return;
+              this.processedEventIds.add(ev.id);
+              if (this.processedEventIds.size > 200) {
+                const first = this.processedEventIds.values().next().value;
+                if (first) this.processedEventIds.delete(first);
+              }
+
               if (ev.type === 'STUDENT_UPDATED' && ev.details?.student) {
                 this.notifyStudentUpdated(ev.details.student, ev.source);
                 this.generateNotificationForEvent(ev);
@@ -122,7 +171,7 @@ class CloudSyncService {
           this.updateStatus('offline');
         }
       }
-    }, 4000);
+    }, 5000);
   }
 
   public async fetchInitialState(): Promise<{
@@ -154,6 +203,11 @@ class CloudSyncService {
   }
 
   private handleIncomingMessage(msg: any) {
+    // Crucial: Ignore echoes of messages sent from this exact client tab
+    if (msg.senderClientId && msg.senderClientId === CLIENT_ID) {
+      return;
+    }
+
     if (msg.type === 'INIT_STATE') {
       if (msg.state?.cohortStudents) {
         this.notifyCohortUpdated(msg.state.cohortStudents);
@@ -186,6 +240,15 @@ class CloudSyncService {
   }
 
   private generateNotificationForEvent(event: any) {
+    if (event.id) {
+      if (this.processedEventIds.has(event.id)) return;
+      this.processedEventIds.add(event.id);
+      if (this.processedEventIds.size > 200) {
+        const first = this.processedEventIds.values().next().value;
+        if (first) this.processedEventIds.delete(first);
+      }
+    }
+
     const isPreceptorAction = event.source === 'preceptor';
     const notif: SyncNotification = {
       id: event.id || String(Date.now()),
@@ -197,7 +260,7 @@ class CloudSyncService {
     this.notifyNotification(notif);
   }
 
-  private isWsConnected(): boolean {
+  public isWsConnected(): boolean {
     return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
   }
 
@@ -267,45 +330,53 @@ class CloudSyncService {
     }
 
     this.debounceTimers[key] = setTimeout(async () => {
-      // 1. Try sending via WebSocket
+      const payload = {
+        student,
+        source,
+        message,
+        clientId: CLIENT_ID,
+      };
+
+      // 1. If WebSocket is connected, broadcast via WebSocket
       if (this.isWsConnected()) {
         try {
           this.ws!.send(
             JSON.stringify({
               type: 'SYNC_STUDENT',
-              student,
-              source,
-              message,
+              ...payload,
             })
           );
+          return;
         } catch (e) {
           console.error('[CloudSync] WS send error:', e);
         }
       }
 
-      // 2. Always persist via HTTP API as well
+      // 2. Fall back to HTTP API if WebSocket is offline or disconnected
       try {
         await fetch('/api/sync/student', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ student, source, message }),
+          body: JSON.stringify(payload),
         });
       } catch (err) {
         console.warn('[CloudSync] Failed to post student update to server:', err);
       }
-    }, 400); // 400ms debounce
+    }, 350); // 350ms debounce
   }
 
   public async syncCohort(cohort: CohortStudentRecord[], source: 'trainee' | 'preceptor' = 'preceptor') {
+    const payload = { cohortStudents: cohort, source, clientId: CLIENT_ID };
+
     if (this.isWsConnected()) {
       try {
         this.ws!.send(
           JSON.stringify({
             type: 'SYNC_COHORT',
-            cohortStudents: cohort,
-            source,
+            ...payload,
           })
         );
+        return;
       } catch (e) {
         console.error(e);
       }
@@ -315,7 +386,7 @@ class CloudSyncService {
       await fetch('/api/sync/cohort', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ cohortStudents: cohort, source }),
+        body: JSON.stringify(payload),
       });
     } catch (e) {
       console.error(e);
@@ -323,14 +394,17 @@ class CloudSyncService {
   }
 
   public async syncPreceptors(preceptors: RegisteredPreceptor[]) {
+    const payload = { preceptors, clientId: CLIENT_ID };
+
     if (this.isWsConnected()) {
       try {
         this.ws!.send(
           JSON.stringify({
             type: 'SYNC_PRECEPTORS',
-            preceptors,
+            ...payload,
           })
         );
+        return;
       } catch (e) {
         console.error(e);
       }
@@ -340,7 +414,7 @@ class CloudSyncService {
       await fetch('/api/sync/preceptors', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ preceptors }),
+        body: JSON.stringify(payload),
       });
     } catch (e) {
       console.error(e);

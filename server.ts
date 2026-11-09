@@ -161,8 +161,8 @@ app.get('/api/sync/state', (req: Request, res: Response) => {
 
 app.post('/api/sync/student', (req: Request, res: Response) => {
   try {
-    const { student, source = 'trainee', message } = req.body;
-    const result = updateOrSaveStudent(student, source, message);
+    const { student, source = 'trainee', message, clientId } = req.body;
+    const result = updateOrSaveStudent(student, source, message, undefined, clientId);
     res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -171,8 +171,8 @@ app.post('/api/sync/student', (req: Request, res: Response) => {
 
 app.post('/api/sync/cohort', (req: Request, res: Response) => {
   try {
-    const { cohortStudents, source = 'preceptor' } = req.body;
-    const result = updateCohortRoster(cohortStudents, source);
+    const { cohortStudents, source = 'preceptor', clientId } = req.body;
+    const result = updateCohortRoster(cohortStudents, source, undefined, clientId);
     res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -181,8 +181,8 @@ app.post('/api/sync/cohort', (req: Request, res: Response) => {
 
 app.post('/api/sync/preceptors', (req: Request, res: Response) => {
   try {
-    const { preceptors } = req.body;
-    const result = updatePreceptorsRoster(preceptors);
+    const { preceptors, clientId } = req.body;
+    const result = updatePreceptorsRoster(preceptors, undefined, clientId);
     res.json({ success: true, data: result });
   } catch (err: any) {
     res.status(400).json({ success: false, error: err.message });
@@ -206,7 +206,12 @@ async function setupViteOrStatic() {
   if (!isProduction) {
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        watch: {
+          ignored: ['**/data/**', '**/ncep_store.json', '**/.git/**'],
+        },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

@@ -98,8 +98,31 @@ export default function App() {
   const [isChangePinModalOpen, setIsChangePinModalOpen] = useState<boolean>(false);
   const [, setSessionUnlockCounter] = useState<number>(0);
 
-  // Flag to avoid echo loop when applying remote updates
+  // Stable refs to access current values inside one-time cloudSync subscription without re-subscribing
+  const currentStudentRosterIdRef = useRef(currentStudentRosterId);
+  currentStudentRosterIdRef.current = currentStudentRosterId;
+
+  const activeTraineeIdRef = useRef(traineeInfo.traineeId);
+  activeTraineeIdRef.current = traineeInfo.traineeId;
+
+  // Flag and hash check to avoid echo loops when applying remote updates
   const isRemoteUpdateRef = useRef(false);
+  const lastSyncedHashRef = useRef<string>('');
+
+  const computeStudentHash = (student: CohortStudentRecord) => {
+    const t = student.traineeInfo;
+    const logsCount = student.detailedLogs?.length || 0;
+    const logsSummary = (student.detailedLogs || [])
+      .map(
+        (l) =>
+          `${l.sessionNumber}:${l.status}:${l.dateOfActivity}:${l.preceptorSignoff?.isSigned ? '1' : '0'}`
+      )
+      .join('|');
+    const signoffSummary = student.finalSignoff
+      ? `${student.finalSignoff.isCertified ? '1' : '0'}:${student.finalSignoff.verificationHash || ''}`
+      : '0';
+    return `${student.id}_${t?.traineeId}_${t?.traineeName}_${t?.clinicalDepartmentWard}_${logsCount}_${logsSummary}_${signoffSummary}`;
+  };
 
   // Check URL parameters for direct role links (e.g. ?role=preceptor or ?role=lead_educator or ?tab=cohort)
   useEffect(() => {
@@ -120,16 +143,18 @@ export default function App() {
     }
   }, []);
 
-  // Cross-device cloud sync: listen to remote updates from server
+  // Cross-device cloud sync: listen to remote updates from server (ONE-TIME SUBSCRIPTION ON MOUNT)
   useEffect(() => {
     cloudSync.init();
 
-    const unsubStudent = cloudSync.onStudentUpdated((remoteStudent, source) => {
+    const unsubStudent = cloudSync.onStudentUpdated((remoteStudent) => {
       // 1. Update in cohort list
       setCohortStudents((prev) => {
         const idx = prev.findIndex(
           (s) =>
-            (s.traineeInfo.traineeId && remoteStudent.traineeInfo.traineeId && s.traineeInfo.traineeId === remoteStudent.traineeInfo.traineeId) ||
+            (s.traineeInfo?.traineeId &&
+              remoteStudent.traineeInfo?.traineeId &&
+              s.traineeInfo.traineeId === remoteStudent.traineeInfo.traineeId) ||
             s.id === remoteStudent.id
         );
         if (idx >= 0) {
@@ -137,40 +162,35 @@ export default function App() {
           copy[idx] = { ...remoteStudent, id: copy[idx].id };
           return copy;
         }
-        const hasIdConflict = prev.some((s) => s.id === remoteStudent.id);
-        const safeStudent = hasIdConflict
-          ? { ...remoteStudent, id: `student-remote-${Date.now()}` }
-          : remoteStudent;
-        return [safeStudent, ...prev];
+        return [remoteStudent, ...prev];
       });
 
       // 2. If it's the currently active student, update active screen state!
+      const currentActiveId = currentStudentRosterIdRef.current;
+      const currentTraineeId = activeTraineeIdRef.current;
+
       if (
-        remoteStudent.id === currentStudentRosterId ||
-        (remoteStudent.traineeInfo.traineeId && remoteStudent.traineeInfo.traineeId === traineeInfo.traineeId)
+        remoteStudent.id === currentActiveId ||
+        (remoteStudent.traineeInfo?.traineeId &&
+          remoteStudent.traineeInfo.traineeId === currentTraineeId)
       ) {
+        // Mark remote update and record hash so auto-broadcast will NOT re-send this back!
         isRemoteUpdateRef.current = true;
+        lastSyncedHashRef.current = computeStudentHash(remoteStudent);
+
         setTraineeInfo(remoteStudent.traineeInfo);
         setDetailedLogs(remoteStudent.detailedLogs || []);
         setFinalSignoff(remoteStudent.finalSignoff);
+
         setTimeout(() => {
           isRemoteUpdateRef.current = false;
-        }, 150);
+        }, 500);
       }
     });
 
     const unsubCohort = cloudSync.onCohortUpdated((remoteCohort) => {
       if (Array.isArray(remoteCohort) && remoteCohort.length > 0) {
-        const seen = new Set<string>();
-        const sanitized = remoteCohort.map((s, idx) => {
-          let safeId = s.id || `student-c-${Date.now()}-${idx}`;
-          if (seen.has(safeId)) {
-            safeId = `${safeId}-${Date.now().toString().slice(-4)}-${idx}`;
-          }
-          seen.add(safeId);
-          return { ...s, id: safeId };
-        });
-        setCohortStudents(sanitized);
+        setCohortStudents(remoteCohort);
       }
     });
 
@@ -185,7 +205,7 @@ export default function App() {
       unsubCohort();
       unsubPreceptors();
     };
-  }, [currentStudentRosterId, traineeInfo.traineeId]);
+  }, []); // Run ONCE on mount
 
   // Sync state to local storage
   useEffect(() => {
@@ -208,7 +228,7 @@ export default function App() {
     saveStoredCohortStudents(cohortStudents);
   }, [cohortStudents]);
 
-  // Automatically broadcast local changes to the cloud server for other devices
+  // Automatically broadcast local changes to the cloud server for other devices (WITH HASH DEDUPLICATION)
   useEffect(() => {
     if (isRemoteUpdateRef.current) return;
 
@@ -219,6 +239,14 @@ export default function App() {
       finalSignoff,
       updatedAt: new Date().toISOString(),
     };
+
+    const newHash = computeStudentHash(studentRecord);
+    // If data hasn't changed since last sync, DO NOT broadcast!
+    if (lastSyncedHashRef.current === newHash) {
+      return;
+    }
+
+    lastSyncedHashRef.current = newHash;
     const isPreceptorRole = userRole === 'preceptor' || userRole === 'lead_educator';
     cloudSync.syncStudent(studentRecord, isPreceptorRole ? 'preceptor' : 'trainee');
   }, [traineeInfo, detailedLogs, finalSignoff, currentStudentRosterId, userRole]);
