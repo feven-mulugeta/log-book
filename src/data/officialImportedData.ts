@@ -1,4 +1,4 @@
-// Official Roster of 16 Preceptors, Mentors & Lead Educator and 52 Students with Individual Student PINs
+// Official Roster of 17 Preceptors, Mentors & Lead Educator and 52 Students with Individual Student PINs
 import { CohortStudentRecord, RegisteredPreceptor } from "../types/nursing";
 
 export const OFFICIAL_IMPORTED_PRECEPTORS: RegisteredPreceptor[] = [
@@ -121,6 +121,15 @@ export const OFFICIAL_IMPORTED_PRECEPTORS: RegisteredPreceptor[] = [
   },
   {
     "id": "prec-batch-1792140406865-13",
+    "name": "Yeshi Berhan",
+    "title": "Mentor",
+    "wardDepartment": "NICU",
+    "pin": "3570",
+    "initials": "YB",
+    "role": "mentor"
+  },
+  {
+    "id": "prec-batch-1792140406865-14",
     "name": "Zeleke Argaw",
     "title": "Mentor",
     "wardDepartment": "Clinical Rotation Ward",
@@ -129,7 +138,7 @@ export const OFFICIAL_IMPORTED_PRECEPTORS: RegisteredPreceptor[] = [
     "role": "mentor"
   },
   {
-    "id": "prec-batch-1792140406865-14",
+    "id": "prec-batch-1792140406865-15",
     "name": "Zuriash Mengistu",
     "title": "Mentor",
     "wardDepartment": "Clinical Rotation Ward",

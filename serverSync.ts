@@ -147,6 +147,15 @@ export const OFFICIAL_INITIAL_PRECEPTORS = [
   },
   {
     "id": "prec-batch-1792140406865-13",
+    "name": "Yeshi Berhan",
+    "title": "Mentor",
+    "wardDepartment": "NICU",
+    "pin": "3570",
+    "initials": "YB",
+    "role": "mentor"
+  },
+  {
+    "id": "prec-batch-1792140406865-14",
     "name": "Zeleke Argaw",
     "title": "Mentor",
     "wardDepartment": "Clinical Rotation Ward",
@@ -155,7 +164,7 @@ export const OFFICIAL_INITIAL_PRECEPTORS = [
     "role": "mentor"
   },
   {
-    "id": "prec-batch-1792140406865-14",
+    "id": "prec-batch-1792140406865-15",
     "name": "Zuriash Mengistu",
     "title": "Mentor",
     "wardDepartment": "Clinical Rotation Ward",
@@ -1147,10 +1156,22 @@ function loadStoreFromDisk() {
           sanitized.push({ ...item, id: safeId });
         }
 
-        const preceptorsList =
+        let preceptorsList =
           Array.isArray(parsed.preceptors) && parsed.preceptors.length > 0
-            ? parsed.preceptors
-            : OFFICIAL_INITIAL_PRECEPTORS;
+            ? [...parsed.preceptors]
+            : [...OFFICIAL_INITIAL_PRECEPTORS];
+
+        let addedOfficial = false;
+        const hasYeshi = preceptorsList.some(
+          (p: any) => p?.name?.trim().toLowerCase() === 'yeshi berhan' || p?.pin === '3570'
+        );
+        if (!hasYeshi) {
+          const yeshiEntry = OFFICIAL_INITIAL_PRECEPTORS.find((p) => p.name === 'Yeshi Berhan');
+          if (yeshiEntry) {
+            preceptorsList.push(yeshiEntry);
+            addedOfficial = true;
+          }
+        }
 
         inMemoryStore = {
           ...parsed,
@@ -1158,8 +1179,8 @@ function loadStoreFromDisk() {
           preceptors: preceptorsList,
         };
 
-        if (!Array.isArray(parsed.preceptors) || parsed.preceptors.length === 0) {
-          saveStoreToDisk();
+        if (!Array.isArray(parsed.preceptors) || parsed.preceptors.length === 0 || addedOfficial) {
+          saveStoreToDisk(true);
         }
 
         console.log(`[CloudSync] Loaded ${inMemoryStore.cohortStudents.length} students and ${inMemoryStore.preceptors.length} preceptors from disk store.`);

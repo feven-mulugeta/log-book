@@ -216,11 +216,22 @@ export function InstructorCohortManager({
   const [newPinInput, setNewPinInput] = useState('');
   const [pinSavedMessage, setPinSavedMessage] = useState(false);
 
-  // Registered Preceptors with individual PINs
+  // Registered Preceptors & Mentors with individual PINs
   const [preceptorsList, setPreceptorsList] = useState<RegisteredPreceptor[]>(getStoredPreceptors);
   const [showPins, setShowPins] = useState(false);
   const [isPreceptorModalOpen, setIsPreceptorModalOpen] = useState(false);
   const [editingPreceptorId, setEditingPreceptorId] = useState<string | null>(null);
+
+  useEffect(() => {
+    const unsub = cloudSync.onPreceptorsUpdated((remoteList) => {
+      if (Array.isArray(remoteList) && remoteList.length > 0) {
+        setPreceptorsList(remoteList);
+      }
+    });
+    return () => {
+      unsub();
+    };
+  }, []);
 
   // Preceptor Form fields
   const [precName, setPrecName] = useState('');
@@ -1154,6 +1165,18 @@ export function InstructorCohortManager({
     saveStoredPreceptors(updatedList);
     cloudSync.syncPreceptors(updatedList);
     setIsPreceptorModalOpen(false);
+    const roleLabel =
+      precRole === 'mentor'
+        ? 'Clinical Mentor'
+        : precRole === 'lead_educator'
+        ? 'Lead Clinical Educator'
+        : 'Clinical Preceptor';
+    setBatchImportNotification(
+      editingPreceptorId
+        ? `Updated ${roleLabel}: ${precName.trim()} (PIN: ${precPin.trim()})`
+        : `Successfully registered ${roleLabel}: ${precName.trim()} (PIN: ${precPin.trim()}). Synced across all devices.`
+    );
+    setTimeout(() => setBatchImportNotification(null), 5000);
   };
 
   const handleResetPreceptorsToDefault = () => {
@@ -1315,10 +1338,10 @@ export function InstructorCohortManager({
                   type="button"
                   onClick={handlePopulate15Preceptors}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-amber-950 bg-amber-400 hover:bg-amber-300 rounded-xl transition-colors shadow-2xs"
-                  title="Quickly populate the official 16-member faculty roster (preceptors, mentors & Lead Educator)"
+                  title="Quickly populate the official 17-member faculty roster (preceptors, mentors & Lead Educator)"
                 >
                   <Sparkles className="w-3.5 h-3.5" />
-                  <span>⚡ Load Official Faculty (16)</span>
+                  <span>⚡ Load Official Faculty (17)</span>
                 </button>
 
                 <button
@@ -1366,9 +1389,19 @@ export function InstructorCohortManager({
 
                 <button
                   type="button"
+                  onClick={() => handleOpenAddPreceptor('mentor')}
+                  className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-bold text-indigo-950 bg-indigo-100 hover:bg-indigo-200 border border-indigo-300 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                  title="Register a clinical mentor"
+                >
+                  <UserCheck className="w-3.5 h-3.5 text-indigo-700" />
+                  <span>+ Add Mentor</span>
+                </button>
+
+                <button
+                  type="button"
                   onClick={() => handleOpenAddPreceptor('preceptor')}
                   className="inline-flex items-center gap-1.5 px-3.5 py-1.5 text-xs font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl transition-colors shadow-2xs cursor-pointer"
-                  title="Register a clinical preceptor or mentor"
+                  title="Register a clinical preceptor"
                 >
                   <Plus className="w-3.5 h-3.5" />
                   <span>+ Add Preceptor</span>
@@ -1382,7 +1415,7 @@ export function InstructorCohortManager({
                 title="Only the Lead Clinical Educator can add new instructors"
               >
                 <Lock className="w-3.5 h-3.5 text-amber-600" />
-                <span>+ Add Preceptor / Educator (Lead Only)</span>
+                <span>+ Add Mentor / Preceptor (Lead Only)</span>
               </button>
             )}
           </div>
@@ -2207,7 +2240,7 @@ export function InstructorCohortManager({
         </div>
       )}
 
-      {/* Add / Edit Instructor & Preceptor Modal */}
+      {/* Add / Edit Instructor, Preceptor & Mentor Modal */}
       {isPreceptorModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
           <div className="relative w-full max-w-lg bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
@@ -2219,10 +2252,13 @@ export function InstructorCohortManager({
                     ? 'Edit Instructor Details & Passcode'
                     : precRole === 'lead_educator'
                     ? 'Register New Lead Clinical Educator'
-                    : 'Register New Instructor / Clinical Preceptor'}
+                    : precRole === 'mentor'
+                    ? 'Register New Clinical Mentor'
+                    : 'Register New Clinical Preceptor'}
                 </h3>
               </div>
               <button
+                type="button"
                 onClick={() => setIsPreceptorModalOpen(false)}
                 className="text-teal-200 hover:text-white"
               >
@@ -2232,15 +2268,18 @@ export function InstructorCohortManager({
 
             <form onSubmit={handleSavePreceptor} className="p-6 space-y-4 text-xs">
               <p className="text-slate-600 leading-relaxed text-[11px]">
-                Assign a personalized authorization PIN code to this instructor. When students request validation on the ward, the instructor enters their specific PIN to verify competencies under their own name.
+                Assign a personalized 4-digit authorization PIN code to this{' '}
+                {precRole === 'mentor' ? 'mentor' : precRole === 'lead_educator' ? 'lead educator' : 'preceptor'}. They will immediately appear in trainee &amp; evaluation dropdowns and can sign sessions under their own name.
               </p>
 
               <div>
-                <label className="block font-bold text-slate-800 mb-1">Instructor / Preceptor Full Name:</label>
+                <label className="block font-bold text-slate-800 mb-1">
+                  {precRole === 'mentor' ? 'Mentor' : 'Instructor / Preceptor'} Full Name:
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Sister Almaz Tefera, RN, MSc"
+                  placeholder={precRole === 'mentor' ? 'e.g. Dr. Selamawit Bekele, PhD / MSN' : 'e.g. Sister Almaz Tefera, RN, MSc'}
                   value={precName}
                   onChange={(e) => {
                     setPrecName(e.target.value);
@@ -2264,7 +2303,17 @@ export function InstructorCohortManager({
                   <label className="block font-bold text-slate-800 mb-1">Role Type:</label>
                   <select
                     value={precRole}
-                    onChange={(e) => setPrecRole(e.target.value as any)}
+                    onChange={(e) => {
+                      const nextRole = e.target.value as 'preceptor' | 'mentor' | 'lead_educator';
+                      setPrecRole(nextRole);
+                      if (!editingPreceptorId) {
+                        if (nextRole === 'mentor' && precTitle === 'Senior Clinical Preceptor') {
+                          setPrecTitle('Clinical Mentor');
+                        } else if (nextRole === 'preceptor' && precTitle === 'Clinical Mentor') {
+                          setPrecTitle('Senior Clinical Preceptor');
+                        }
+                      }
+                    }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 bg-white"
                   >
                     <option value="lead_educator">⭐ Lead Clinical Educator</option>
@@ -2293,7 +2342,7 @@ export function InstructorCohortManager({
                     <span>Lead Clinical Educator Privileges</span>
                   </div>
                   <p className="text-purple-900/90 leading-relaxed">
-                    This staff member will have full administrative authority to enroll student cohorts, import Word rosters, add or edit preceptors, and certify completed logbooks.
+                    This staff member will have full administrative authority to enroll student cohorts, import Word rosters, add or edit preceptors &amp; mentors, and certify completed logbooks.
                   </p>
                 </div>
               )}
@@ -2303,7 +2352,7 @@ export function InstructorCohortManager({
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Senior Clinical Preceptor - Critical Care"
+                  placeholder={precRole === 'mentor' ? 'e.g. Clinical Mentor - Critical Care Nursing' : 'e.g. Senior Clinical Preceptor - Critical Care'}
                   value={precTitle}
                   onChange={(e) => setPrecTitle(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300"
@@ -2322,11 +2371,31 @@ export function InstructorCohortManager({
                 />
               </div>
 
-              <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-1">
-                <label className="block font-bold text-teal-950 mb-1 flex items-center gap-1.5">
-                  <Lock className="w-3.5 h-3.5 text-teal-800" />
-                  <span>Personal Security PIN Code (Confidential):</span>
-                </label>
+              <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-1.5">
+                <div className="flex items-center justify-between">
+                  <label className="block font-bold text-teal-950 flex items-center gap-1.5">
+                    <Lock className="w-3.5 h-3.5 text-teal-800" />
+                    <span>Personal Security PIN Code (Confidential):</span>
+                  </label>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const existingPins = new Set(preceptorsList.map((p) => p.pin.trim()));
+                      let candidate = '';
+                      for (let i = 0; i < 50; i++) {
+                        const rnd = String(Math.floor(1000 + Math.random() * 9000));
+                        if (!existingPins.has(rnd)) {
+                          candidate = rnd;
+                          break;
+                        }
+                      }
+                      setPrecPin(candidate || String(Math.floor(1000 + Math.random() * 9000)));
+                    }}
+                    className="text-[11px] font-semibold text-teal-800 hover:text-teal-950 underline cursor-pointer"
+                  >
+                    Generate Unique 4-Digit PIN
+                  </button>
+                </div>
                 <input
                   type="text"
                   required
@@ -2353,7 +2422,13 @@ export function InstructorCohortManager({
                   type="submit"
                   className="px-5 py-2 font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-2xs"
                 >
-                  {editingPreceptorId ? 'Save Changes' : 'Register Preceptor'}
+                  {editingPreceptorId
+                    ? 'Save Changes'
+                    : precRole === 'mentor'
+                    ? 'Register Mentor'
+                    : precRole === 'lead_educator'
+                    ? 'Register Lead Educator'
+                    : 'Register Preceptor'}
                 </button>
               </div>
             </form>

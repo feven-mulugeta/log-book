@@ -44,6 +44,23 @@ export function getStoredPreceptors(): RegisteredPreceptor[] {
           (p) => p && (p.name?.includes('Abaynesh') || p.name?.includes('Yohannes Ayalew') || p.name?.includes('Aklil'))
         );
         if (hasOfficial) {
+          // One-time merge for newly added official mentor Yeshi Berhan (NICU, PIN 3570)
+          const mergedKey = 'ncep_official_mentor_yeshi_3570_merged';
+          if (!localStorage.getItem(mergedKey)) {
+            const exists = parsed.some(
+              (p) => p?.name?.trim().toLowerCase() === 'yeshi berhan' || p?.pin === '3570'
+            );
+            if (!exists) {
+              const yeshi = OFFICIAL_IMPORTED_PRECEPTORS.find((p) => p.name === 'Yeshi Berhan');
+              if (yeshi) {
+                const updated = [...parsed, yeshi];
+                localStorage.setItem(STORAGE_KEYS.PRECEPTOR_ROSTER, JSON.stringify(updated));
+                localStorage.setItem(mergedKey, 'true');
+                return updated;
+              }
+            }
+            localStorage.setItem(mergedKey, 'true');
+          }
           return parsed;
         }
       }

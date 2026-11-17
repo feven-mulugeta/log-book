@@ -273,6 +273,7 @@ export function TraineeInfoAndInstructions({
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700 font-semibold"
                   />
                   <datalist id="trainee-info-wards-list">
+                    <option value="NICU" />
                     <option value="Medical ICU" />
                     <option value="Surgical Inpatient Ward 4B / Acute Care" />
                     <option value="Emergency Center & Trauma" />

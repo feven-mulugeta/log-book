@@ -1161,6 +1161,15 @@
     },
     {
       "id": "prec-batch-1792140406865-13",
+      "name": "Yeshi Berhan",
+      "title": "Mentor",
+      "wardDepartment": "NICU",
+      "pin": "3570",
+      "initials": "YB",
+      "role": "mentor"
+    },
+    {
+      "id": "prec-batch-1792140406865-14",
       "name": "Zeleke Argaw",
       "title": "Mentor",
       "wardDepartment": "Clinical Rotation Ward",
@@ -1169,7 +1178,7 @@
       "role": "mentor"
     },
     {
-      "id": "prec-batch-1792140406865-14",
+      "id": "prec-batch-1792140406865-15",
       "name": "Zuriash Mengistu",
       "title": "Mentor",
       "wardDepartment": "Clinical Rotation Ward",
@@ -1187,5 +1196,5 @@
       "initials": "LE"
     }
   ],
-  "lastUpdated": "2026-11-02T03:01:23.953Z"
+  "lastUpdated": "2026-11-16T19:03:00.000Z"
 }
