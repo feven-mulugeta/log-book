@@ -798,19 +798,28 @@ export default function App() {
   };
 
   const handleAddCohortStudent = (newRecord: CohortStudentRecord) => {
-    let resolvedId = newRecord.id;
-    setCohortStudents((prev) => {
-      const hasConflict = prev.some((s) => s.id === newRecord.id);
-      if (hasConflict || !newRecord.id) {
-        resolvedId = `student-add-${Date.now()}`;
-      }
-      return [{ ...newRecord, id: resolvedId }, ...prev];
-    });
-    setTraineeInfo(newRecord.traineeInfo);
-    setDetailedLogs(newRecord.detailedLogs);
-    setFinalSignoff(newRecord.finalSignoff);
+    const normalized = normalizeStudentRecord(newRecord);
+    const hasConflict = cohortStudents.some((s) => s.id === normalized.id);
+    const resolvedId =
+      hasConflict || !normalized.id ? `student-add-${Date.now()}` : normalized.id;
+    const finalRecord: CohortStudentRecord = { ...normalized, id: resolvedId };
+    const updatedCohort = [finalRecord, ...cohortStudents];
+
+    setCohortStudents(updatedCohort);
+    saveStoredCohortStudents(updatedCohort);
+    cloudSync.syncCohort(updatedCohort, 'preceptor');
+
+    lastSyncedHashRef.current = computeStudentHash(finalRecord);
+    lastFirestoreHashRef.current = computeStudentHash(finalRecord);
+    setTraineeInfo(finalRecord.traineeInfo);
+    setDetailedLogs(finalRecord.detailedLogs);
+    setFinalSignoff(finalRecord.finalSignoff);
     setCurrentStudentRosterId(resolvedId);
     setActiveTab('page1');
+
+    if (firebaseUser && firebaseUser.emailVerified) {
+      persistStudentToFirestore(finalRecord, isRootAdmin || isFirestoreStaff);
+    }
   };
 
   const handleDeleteCohortStudent = (studentId: string) => {
