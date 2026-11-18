@@ -19,7 +19,7 @@ export function NcepAcademicPrintView({
 }: NcepAcademicPrintViewProps) {
   // Helper to find log for session
   const getLogForSession = (sessionNum: number) => {
-    return detailedLogs.find((l) => l.sessionNumber === sessionNum);
+    return (detailedLogs || []).find((l) => l.sessionNumber === sessionNum);
   };
 
   const subCompetencies = [
@@ -75,35 +75,35 @@ export function NcepAcademicPrintView({
               <p>
                 • <strong>Trainee Name:</strong>{' '}
                 <span className="border-b border-black pb-0.5 inline-block min-w-[320px]">
-                  {traineeInfo.traineeName}
+                  {traineeInfo?.traineeName || ''}
                 </span>
               </p>
               <p>
                 • <strong>Trainee ID:</strong>{' '}
                 <span className="border-b border-black pb-0.5 inline-block min-w-[260px] font-mono">
-                  {traineeInfo.traineeId}
+                  {traineeInfo?.traineeId || ''}
                 </span>
               </p>
               <p>
                 • <strong>Clinical Department / Ward:</strong>{' '}
                 <span className="border-b border-black pb-0.5 inline-block min-w-[340px]">
-                  {traineeInfo.clinicalDepartmentWard}
+                  {traineeInfo?.clinicalDepartmentWard || ''}
                 </span>
               </p>
               <p>
                 • <strong>Assigned Clinical Preceptor / Mentor:</strong>{' '}
                 <span className="border-b border-black pb-0.5 inline-block min-w-[300px]">
-                  {traineeInfo.assignedClinicalPreceptor}
+                  {traineeInfo?.assignedClinicalPreceptor || ''}
                 </span>
               </p>
               <p>
                 • <strong>Training Period:</strong> From{' '}
                 <span className="border-b border-black pb-0.5 inline-block min-w-[140px] text-center font-mono">
-                  {traineeInfo.trainingPeriodFrom}
+                  {traineeInfo?.trainingPeriodFrom || ''}
                 </span>{' '}
                 To{' '}
                 <span className="border-b border-black pb-0.5 inline-block min-w-[140px] text-center font-mono">
-                  {traineeInfo.trainingPeriodTo}
+                  {traineeInfo?.trainingPeriodTo || ''}
                 </span>
               </p>
             </div>
@@ -213,7 +213,7 @@ export function NcepAcademicPrintView({
       </div>
 
       {/* PAGES 5 & 6: PART II: DETAILED CLINICAL ACTIVITY LOG SHEETS */}
-      {detailedLogs.slice(0, 3).map((log, idx) => (
+      {(detailedLogs || []).slice(0, 3).map((log, idx) => (
         <div key={log.id} className="min-h-[1050px] flex flex-col justify-between py-6 page-break-after">
           <div className="space-y-6">
             <div className="space-y-1">
@@ -372,14 +372,14 @@ export function NcepAcademicPrintView({
             <p>
               • <strong>Lead Clinical Educator / Coordinator Name:</strong>{' '}
               <span className="border-b border-black pb-0.5 inline-block min-w-[320px] font-bold">
-                {finalSignoff.leadEducatorName}
+                {finalSignoff?.leadEducatorName || ''}
               </span>
             </p>
 
             <div className="grid grid-cols-2 gap-8 pt-6">
               <div>
                 <p className="font-bold">• Signature:</p>
-                {finalSignoff.signatureDataUrl ? (
+                {finalSignoff?.signatureDataUrl ? (
                   <img
                     src={finalSignoff.signatureDataUrl}
                     alt="Signature"
@@ -393,12 +393,12 @@ export function NcepAcademicPrintView({
               <div>
                 <p className="font-bold">• Date:</p>
                 <p className="font-mono text-sm font-semibold border-b border-black mt-2 pb-1">
-                  {finalSignoff.dateSigned || ''}
+                  {finalSignoff?.dateSigned || ''}
                 </p>
               </div>
             </div>
 
-            {finalSignoff.verificationHash && (
+            {finalSignoff?.verificationHash && (
               <div className="pt-8 text-center text-[10px] text-gray-500 font-mono">
                 SECURE RECORD TOKEN: {finalSignoff.verificationHash}
               </div>

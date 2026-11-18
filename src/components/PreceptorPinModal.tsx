@@ -10,7 +10,7 @@ import { RegisteredPreceptor } from '../types/nursing';
 interface PreceptorPinModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: (preceptor?: RegisteredPreceptor) => void;
+  onSuccess: (preceptor?: RegisteredPreceptor, enteredPin?: string) => void;
   title?: string;
   subtitle?: string;
   requiredRole?: 'preceptor' | 'lead_educator';
@@ -35,10 +35,11 @@ export function PreceptorPinModal({
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
+    const entered = pin;
     const result =
       requiredRole === 'lead_educator'
-        ? verifyLeadEducatorPin(pin)
-        : verifyPreceptorPinDetailed(pin);
+        ? verifyLeadEducatorPin(entered)
+        : verifyPreceptorPinDetailed(entered);
 
     if (result.valid) {
       setError(null);
@@ -46,7 +47,7 @@ export function PreceptorPinModal({
       setTimeout(() => {
         setPin('');
         setIdentifiedPreceptor(null);
-        onSuccess(result.preceptor);
+        onSuccess(result.preceptor, entered);
       }, 350);
     } else {
       setError(

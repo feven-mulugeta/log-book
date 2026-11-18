@@ -69,9 +69,9 @@ export function TraineeInfoAndInstructions({
   useEffect(() => {
     setFormData(traineeInfo);
     if (
-      traineeInfo.assignedClinicalPreceptor &&
+      traineeInfo?.assignedClinicalPreceptor &&
       !registeredPreceptors.some(
-        (p) => p.name.trim().toLowerCase() === traineeInfo.assignedClinicalPreceptor.trim().toLowerCase()
+        (p) => (p.name || '').trim().toLowerCase() === (traineeInfo.assignedClinicalPreceptor || '').trim().toLowerCase()
       )
     ) {
       setIsCustomPreceptor(true);
@@ -113,7 +113,7 @@ export function TraineeInfoAndInstructions({
 
         {/* Trainee Information Section from Page 1 */}
         <div className="p-6 sm:p-8 space-y-6">
-          {cohortStudents.length > 1 && onSelectStudent && (
+          {(cohortStudents || []).length > 1 && onSelectStudent && (
             <div className="p-3 bg-teal-50/60 rounded-xl border border-teal-200/90 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 text-xs">
               <div className="flex items-center gap-2">
                 <Users className="w-4 h-4 text-teal-700 shrink-0" />
@@ -122,18 +122,18 @@ export function TraineeInfoAndInstructions({
                 </span>
               </div>
               <select
-                value={traineeInfo.traineeId}
+                value={traineeInfo?.traineeId || ''}
                 onChange={(e) => {
                   const target = cohortStudents.find(
-                    (s) => s.traineeInfo.traineeId === e.target.value
+                    (s) => s?.traineeInfo?.traineeId === e.target.value
                   );
                   if (target) onSelectStudent(target);
                 }}
                 className="px-2.5 py-1 text-xs rounded-lg border border-teal-300 bg-white font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-teal-700"
               >
                 {cohortStudents.map((s, idx) => (
-                  <option key={`cohort-opt-${s.id}-${s.traineeInfo.traineeId || idx}-${idx}`} value={s.traineeInfo.traineeId}>
-                    {s.traineeInfo.traineeName || 'Unnamed Trainee'} ({s.traineeInfo.traineeId || 'ID Pending'})
+                  <option key={`cohort-opt-${s.id}-${s.traineeInfo?.traineeId || idx}-${idx}`} value={s.traineeInfo?.traineeId || ''}>
+                    {s.traineeInfo?.traineeName || 'Unnamed Trainee'} ({s.traineeInfo?.traineeId || 'ID Pending'})
                   </option>
                 ))}
               </select>

@@ -1,5 +1,5 @@
 import { CohortStudentRecord, RegisteredPreceptor } from '../types/nursing';
-import { saveStoredPreceptors, saveStoredCohortStudents } from './storage';
+import { saveStoredPreceptors, saveStoredCohortStudents, normalizeStudentRecord } from './storage';
 
 export type SyncStatus = 'connected' | 'http_sync' | 'connecting' | 'offline';
 
@@ -36,6 +36,7 @@ class CloudSyncService {
   private liveDevicesCount = 1;
   private reconnectTimer: any = null;
   private pollTimer: any = null;
+  private heartbeatTimer: any = null;
   private lastPollTimestamp = new Date().toISOString();
   private debounceTimers: Record<string, any> = {};
   private isInitialized = false;
@@ -58,8 +59,23 @@ class CloudSyncService {
     this.isInitialized = true;
     this.connectWebSocket();
     this.startHttpPollingFallback();
+    this.startHeartbeat();
     // Initial fetch from server
     this.fetchInitialState();
+  }
+
+  private startHeartbeat() {
+    if (this.heartbeatTimer) {
+      clearInterval(this.heartbeatTimer);
+    }
+    // Keep WebSocket active through reverse proxies / Cloud Run 60s idle timeout
+    this.heartbeatTimer = setInterval(() => {
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ type: 'PING', clientId: CLIENT_ID }));
+        } catch (e) {}
+      }
+    }, 25000);
   }
 
   private connectWebSocket() {
@@ -203,16 +219,19 @@ class CloudSyncService {
   }
 
   private handleIncomingMessage(msg: any) {
+    if (!msg || typeof msg !== 'object') return;
+    if (msg.type === 'PONG' || msg.type === 'PING') return;
+
     // Crucial: Ignore echoes of messages sent from this exact client tab
     if (msg.senderClientId && msg.senderClientId === CLIENT_ID) {
       return;
     }
 
     if (msg.type === 'INIT_STATE') {
-      if (msg.state?.cohortStudents) {
+      if (Array.isArray(msg.state?.cohortStudents)) {
         this.notifyCohortUpdated(msg.state.cohortStudents);
       }
-      if (msg.state?.preceptors) {
+      if (Array.isArray(msg.state?.preceptors)) {
         this.notifyPreceptorUpdated(msg.state.preceptors);
       }
       if (msg.state?.activeConnections) {
@@ -220,18 +239,18 @@ class CloudSyncService {
         this.notifyStatus();
       }
     } else if (msg.type === 'STUDENT_UPDATED') {
-      if (msg.student) {
-        this.notifyStudentUpdated(msg.student, msg.source);
+      if (msg.student && typeof msg.student === 'object') {
+        this.notifyStudentUpdated(msg.student, msg.source || 'trainee');
         if (msg.event) {
           this.generateNotificationForEvent(msg.event);
         }
       }
     } else if (msg.type === 'COHORT_UPDATED') {
-      if (msg.cohortStudents) {
+      if (Array.isArray(msg.cohortStudents)) {
         this.notifyCohortUpdated(msg.cohortStudents);
       }
     } else if (msg.type === 'PRECEPTORS_UPDATED') {
-      if (msg.preceptors) {
+      if (Array.isArray(msg.preceptors)) {
         this.notifyPreceptorUpdated(msg.preceptors);
       }
     } else if (msg.type === 'SYNC_EVENT' && msg.event) {
@@ -270,29 +289,58 @@ class CloudSyncService {
   }
 
   private notifyStatus() {
-    this.statusListeners.forEach((l) => l(this.status, this.liveDevicesCount));
+    this.statusListeners.forEach((l) => {
+      try {
+        l(this.status, this.liveDevicesCount);
+      } catch (e) {}
+    });
   }
 
   private notifyStudentUpdated(student: CohortStudentRecord, source: 'trainee' | 'preceptor') {
-    this.studentUpdateListeners.forEach((l) => l(student, source));
+    const normalized = normalizeStudentRecord(student);
+    this.studentUpdateListeners.forEach((l) => {
+      try {
+        l(normalized, source);
+      } catch (e) {
+        console.error('[CloudSync] Student listener error:', e);
+      }
+    });
   }
 
   private notifyCohortUpdated(cohort: CohortStudentRecord[]) {
-    if (Array.isArray(cohort) && cohort.length > 0) {
-      saveStoredCohortStudents(cohort);
-    }
-    this.cohortUpdateListeners.forEach((l) => l(cohort));
+    if (!Array.isArray(cohort) || cohort.length === 0) return;
+    const normalized = cohort.filter((s) => s && typeof s === 'object').map((s, i) => normalizeStudentRecord(s, i));
+    if (normalized.length === 0) return;
+    saveStoredCohortStudents(normalized);
+    this.cohortUpdateListeners.forEach((l) => {
+      try {
+        l(normalized);
+      } catch (e) {
+        console.error('[CloudSync] Cohort listener error:', e);
+      }
+    });
   }
 
   private notifyPreceptorUpdated(preceptors: RegisteredPreceptor[]) {
-    if (Array.isArray(preceptors) && preceptors.length > 0) {
-      saveStoredPreceptors(preceptors);
-    }
-    this.preceptorUpdateListeners.forEach((l) => l(preceptors));
+    if (!Array.isArray(preceptors) || preceptors.length === 0) return;
+    const cleaned = preceptors.filter((p) => p && typeof p === 'object' && p.name);
+    if (cleaned.length === 0) return;
+    saveStoredPreceptors(cleaned);
+    this.preceptorUpdateListeners.forEach((l) => {
+      try {
+        l(cleaned);
+      } catch (e) {
+        console.error('[CloudSync] Preceptor listener error:', e);
+      }
+    });
   }
 
   private notifyNotification(notif: SyncNotification) {
-    this.notificationListeners.forEach((l) => l(notif));
+    this.notificationListeners.forEach((l) => {
+      try {
+        l(notif);
+      } catch (e) {}
+    });
   }
 
   // Public subscriptions

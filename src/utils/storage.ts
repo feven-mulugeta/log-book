@@ -33,6 +33,89 @@ export const FULL_15_PRECEPTORS_ROSTER: RegisteredPreceptor[] = OFFICIAL_IMPORTE
 export const DEFAULT_REGISTERED_PRECEPTORS: RegisteredPreceptor[] = OFFICIAL_IMPORTED_PRECEPTORS;
 export const DEFAULT_COHORT_STUDENTS: CohortStudentRecord[] = OFFICIAL_IMPORTED_STUDENTS;
 
+function safeLocalStorageSet(key: string, value: string): void {
+  try {
+    localStorage.setItem(key, value);
+  } catch (e) {
+    console.warn(`[Storage] Failed to save ${key}:`, e);
+  }
+}
+
+export function normalizeTraineeInfo(info: any): TraineeInformation {
+  const raw = info && typeof info === 'object' ? info : {};
+  return {
+    traineeName: typeof raw.traineeName === 'string' ? raw.traineeName : '',
+    traineeId: typeof raw.traineeId === 'string' ? raw.traineeId : '',
+    clinicalDepartmentWard: typeof raw.clinicalDepartmentWard === 'string' ? raw.clinicalDepartmentWard : '',
+    assignedClinicalPreceptor:
+      typeof raw.assignedClinicalPreceptor === 'string' ? raw.assignedClinicalPreceptor : '',
+    trainingPeriodFrom: typeof raw.trainingPeriodFrom === 'string' ? raw.trainingPeriodFrom : '',
+    trainingPeriodTo: typeof raw.trainingPeriodTo === 'string' ? raw.trainingPeriodTo : '',
+    ...(raw.studentPin ? { studentPin: String(raw.studentPin) } : {}),
+  };
+}
+
+export function normalizeDetailedLog(log: any, index: number = 0): DetailedActivityLogSheet {
+  const raw = log && typeof log === 'object' ? log : {};
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : `ncep-log-${Date.now()}-${index}`,
+    sessionNumber: Number(raw.sessionNumber) || 1,
+    sessionTitle: typeof raw.sessionTitle === 'string' ? raw.sessionTitle : `Session ${Number(raw.sessionNumber) || 1}`,
+    subCompetencyId: raw.subCompetencyId || 'sub_comp_1',
+    subCompetencyTitle: typeof raw.subCompetencyTitle === 'string' ? raw.subCompetencyTitle : '',
+    dateOfActivity: typeof raw.dateOfActivity === 'string' ? raw.dateOfActivity : '',
+    durationHours: Number(raw.durationHours) || 4,
+    clinicalSettingWard: typeof raw.clinicalSettingWard === 'string' ? raw.clinicalSettingWard : 'Medical ICU',
+    activityDescription: typeof raw.activityDescription === 'string' ? raw.activityDescription : '',
+    reflectiveNotesLessonsLearned:
+      typeof raw.reflectiveNotesLessonsLearned === 'string' ? raw.reflectiveNotesLessonsLearned : '',
+    attachments: Array.isArray(raw.attachments)
+      ? raw.attachments.filter((a: any) => a && typeof a === 'object')
+      : [],
+    preceptorSignoff: raw.preceptorSignoff && typeof raw.preceptorSignoff === 'object' ? raw.preceptorSignoff : undefined,
+    status: raw.status === 'Met' ? 'Met' : 'Pending',
+    source: raw.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
+    createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
+  };
+}
+
+export function normalizeFinalSignoff(signoff: any): FinalCompetencySignoff {
+  const raw = signoff && typeof signoff === 'object' ? signoff : {};
+  return {
+    isCertified: Boolean(raw.isCertified),
+    leadEducatorName: typeof raw.leadEducatorName === 'string' ? raw.leadEducatorName : '',
+    leadEducatorTitle:
+      typeof raw.leadEducatorTitle === 'string'
+        ? raw.leadEducatorTitle
+        : 'Lead Clinical Educator / Program Coordinator',
+    signatureDataUrl: typeof raw.signatureDataUrl === 'string' ? raw.signatureDataUrl : undefined,
+    dateSigned: typeof raw.dateSigned === 'string' ? raw.dateSigned : undefined,
+    verificationHash: typeof raw.verificationHash === 'string' ? raw.verificationHash : undefined,
+  };
+}
+
+export function normalizeStudentRecord(student: any, index: number = 0): CohortStudentRecord {
+  const raw = student && typeof student === 'object' ? student : {};
+  const traineeInfo = normalizeTraineeInfo(raw.traineeInfo);
+  const detailedLogs = Array.isArray(raw.detailedLogs)
+    ? raw.detailedLogs.filter((l: any) => l && typeof l === 'object').map((l: any, i: number) => normalizeDetailedLog(l, i))
+    : [];
+  const finalSignoff = normalizeFinalSignoff(raw.finalSignoff);
+  const pin = raw.studentPin || traineeInfo.studentPin || computeDefaultStudentPin(traineeInfo.traineeId, index);
+
+  return {
+    id: typeof raw.id === 'string' && raw.id ? raw.id : `student-${Date.now()}-${index}`,
+    traineeInfo: {
+      ...traineeInfo,
+      studentPin: String(pin),
+    },
+    detailedLogs,
+    finalSignoff,
+    studentPin: String(pin),
+    updatedAt: typeof raw.updatedAt === 'string' ? raw.updatedAt : new Date().toISOString(),
+  };
+}
+
 export function getStoredPreceptors(): RegisteredPreceptor[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.PRECEPTOR_ROSTER);
@@ -54,14 +137,14 @@ export function getStoredPreceptors(): RegisteredPreceptor[] {
               const yeshi = OFFICIAL_IMPORTED_PRECEPTORS.find((p) => p.name === 'Yeshi Berhan');
               if (yeshi) {
                 const updated = [...parsed, yeshi];
-                localStorage.setItem(STORAGE_KEYS.PRECEPTOR_ROSTER, JSON.stringify(updated));
-                localStorage.setItem(mergedKey, 'true');
+                safeLocalStorageSet(STORAGE_KEYS.PRECEPTOR_ROSTER, JSON.stringify(updated));
+                safeLocalStorageSet(mergedKey, 'true');
                 return updated;
               }
             }
-            localStorage.setItem(mergedKey, 'true');
+            safeLocalStorageSet(mergedKey, 'true');
           }
-          return parsed;
+          return parsed.filter((p) => p && typeof p === 'object' && p.name);
         }
       }
     }
@@ -72,7 +155,7 @@ export function getStoredPreceptors(): RegisteredPreceptor[] {
 }
 
 export function saveStoredPreceptors(preceptors: RegisteredPreceptor[]): void {
-  localStorage.setItem(STORAGE_KEYS.PRECEPTOR_ROSTER, JSON.stringify(preceptors));
+  safeLocalStorageSet(STORAGE_KEYS.PRECEPTOR_ROSTER, JSON.stringify(preceptors));
 }
 
 export function findPreceptorByPin(pin: string): RegisteredPreceptor | null {
@@ -93,7 +176,7 @@ export function getPreceptorPin(): string {
 }
 
 export function savePreceptorPin(pin: string): void {
-  localStorage.setItem(STORAGE_KEYS.PRECEPTOR_PIN, pin);
+  safeLocalStorageSet(STORAGE_KEYS.PRECEPTOR_PIN, pin);
 }
 
 export function verifyPreceptorPin(pin: string): boolean {
@@ -189,32 +272,36 @@ export function getStoredTraineeInfo(): TraineeInformation {
     if (raw) {
       const parsed = JSON.parse(raw);
       if (parsed && typeof parsed === 'object') {
-        // Return stored trainee info even if fields are blank
-        return parsed;
+        return normalizeTraineeInfo(parsed);
       }
     }
   } catch (e) {
     console.error(e);
   }
-  return DEFAULT_COHORT_STUDENTS[0]?.traineeInfo || INITIAL_TRAINEE_INFO;
+  return normalizeTraineeInfo(DEFAULT_COHORT_STUDENTS[0]?.traineeInfo || INITIAL_TRAINEE_INFO);
 }
 
 export function saveStoredTraineeInfo(info: TraineeInformation): void {
-  localStorage.setItem(STORAGE_KEYS.TRAINEE_INFO, JSON.stringify(info));
+  safeLocalStorageSet(STORAGE_KEYS.TRAINEE_INFO, JSON.stringify(info));
 }
 
 export function getStoredDetailedLogs(): DetailedActivityLogSheet[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.DETAILED_LOGS);
-    if (raw) return JSON.parse(raw);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter((l) => l && typeof l === 'object').map((l, i) => normalizeDetailedLog(l, i));
+      }
+    }
   } catch (e) {
     console.error(e);
   }
-  return INITIAL_DETAILED_LOG_SHEETS;
+  return INITIAL_DETAILED_LOG_SHEETS.map((l, i) => normalizeDetailedLog(l, i));
 }
 
 export function saveStoredDetailedLogs(logs: DetailedActivityLogSheet[]): void {
-  localStorage.setItem(STORAGE_KEYS.DETAILED_LOGS, JSON.stringify(logs));
+  safeLocalStorageSet(STORAGE_KEYS.DETAILED_LOGS, JSON.stringify(logs));
 }
 
 export function getStoredFinalSignoff(): FinalCompetencySignoff {
@@ -222,21 +309,22 @@ export function getStoredFinalSignoff(): FinalCompetencySignoff {
     const raw = localStorage.getItem(STORAGE_KEYS.FINAL_SIGNOFF);
     if (raw) {
       const parsed = JSON.parse(raw);
-      if (parsed) {
-        if (!parsed.leadEducatorName || parsed.leadEducatorName.includes('Berhanu') || parsed.leadEducatorName.includes('Tigist')) {
-          parsed.leadEducatorName = 'Mr. Yohannes Ayalew';
+      if (parsed && typeof parsed === 'object') {
+        const normalized = normalizeFinalSignoff(parsed);
+        if (!normalized.leadEducatorName || normalized.leadEducatorName.includes('Berhanu') || normalized.leadEducatorName.includes('Tigist')) {
+          normalized.leadEducatorName = 'Mr. Yohannes Ayalew';
         }
-        return parsed;
+        return normalized;
       }
     }
   } catch (e) {
     console.error(e);
   }
-  return INITIAL_FINAL_SIGNOFF;
+  return normalizeFinalSignoff(INITIAL_FINAL_SIGNOFF);
 }
 
 export function saveStoredFinalSignoff(signoff: FinalCompetencySignoff): void {
-  localStorage.setItem(STORAGE_KEYS.FINAL_SIGNOFF, JSON.stringify(signoff));
+  safeLocalStorageSet(STORAGE_KEYS.FINAL_SIGNOFF, JSON.stringify(signoff));
 }
 
 export function getStoredUserRole(): UserRole {
@@ -252,7 +340,7 @@ export function getStoredUserRole(): UserRole {
 }
 
 export function saveStoredUserRole(role: UserRole): void {
-  localStorage.setItem(STORAGE_KEYS.USER_ROLE, role);
+  safeLocalStorageSet(STORAGE_KEYS.USER_ROLE, role);
 }
 
 // Generate secure verification hash for Part III certification
@@ -430,16 +518,8 @@ export function getStoredCohortStudents(): CohortStudentRecord[] {
             seenIds.add(safeId);
 
             const pin = item.studentPin || item.traineeInfo?.studentPin || computeDefaultStudentPin(traineeId, i);
-
-            sanitized.push({
-              ...item,
-              id: safeId,
-              studentPin: pin,
-              traineeInfo: {
-                ...item.traineeInfo,
-                studentPin: pin,
-              },
-            });
+            const normalized = normalizeStudentRecord({ ...item, id: safeId, studentPin: pin }, i);
+            sanitized.push(normalized);
           }
 
           if (sanitized.length > 0) return sanitized;
@@ -449,9 +529,9 @@ export function getStoredCohortStudents(): CohortStudentRecord[] {
   } catch (e) {
     console.error(e);
   }
-  return DEFAULT_COHORT_STUDENTS;
+  return DEFAULT_COHORT_STUDENTS.map((s, i) => normalizeStudentRecord(s, i));
 }
 
 export function saveStoredCohortStudents(students: CohortStudentRecord[]): void {
-  localStorage.setItem(STORAGE_KEYS.COHORT_STUDENTS, JSON.stringify(students));
+  safeLocalStorageSet(STORAGE_KEYS.COHORT_STUDENTS, JSON.stringify(students));
 }

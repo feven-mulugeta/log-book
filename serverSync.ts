@@ -1136,6 +1136,53 @@ function ensureDataDirectory() {
   }
 }
 
+function normalizeServerStudent(student: any, idx: number = 0) {
+  const rawInfo = student?.traineeInfo && typeof student.traineeInfo === 'object' ? student.traineeInfo : {};
+  const traineeInfo = {
+    traineeName: typeof rawInfo.traineeName === 'string' ? rawInfo.traineeName : '',
+    traineeId: typeof rawInfo.traineeId === 'string' ? rawInfo.traineeId : '',
+    clinicalDepartmentWard: typeof rawInfo.clinicalDepartmentWard === 'string' ? rawInfo.clinicalDepartmentWard : '',
+    assignedClinicalPreceptor: typeof rawInfo.assignedClinicalPreceptor === 'string' ? rawInfo.assignedClinicalPreceptor : '',
+    trainingPeriodFrom: typeof rawInfo.trainingPeriodFrom === 'string' ? rawInfo.trainingPeriodFrom : '',
+    trainingPeriodTo: typeof rawInfo.trainingPeriodTo === 'string' ? rawInfo.trainingPeriodTo : '',
+    ...(rawInfo.studentPin ? { studentPin: String(rawInfo.studentPin) } : {}),
+  };
+
+  const detailedLogs = Array.isArray(student?.detailedLogs)
+    ? student.detailedLogs
+        .filter((l: any) => l && typeof l === 'object')
+        .map((l: any) => ({
+          ...l,
+          attachments: Array.isArray(l.attachments) ? l.attachments : [],
+          activityDescription: typeof l.activityDescription === 'string' ? l.activityDescription : '',
+          reflectiveNotesLessonsLearned:
+            typeof l.reflectiveNotesLessonsLearned === 'string' ? l.reflectiveNotesLessonsLearned : '',
+        }))
+    : [];
+
+  const rawSignoff = student?.finalSignoff && typeof student.finalSignoff === 'object' ? student.finalSignoff : {};
+  const finalSignoff = {
+    isCertified: Boolean(rawSignoff.isCertified),
+    leadEducatorName: typeof rawSignoff.leadEducatorName === 'string' ? rawSignoff.leadEducatorName : '',
+    leadEducatorTitle:
+      typeof rawSignoff.leadEducatorTitle === 'string'
+        ? rawSignoff.leadEducatorTitle
+        : 'Lead Clinical Educator / Program Coordinator',
+    ...(rawSignoff.signatureDataUrl ? { signatureDataUrl: rawSignoff.signatureDataUrl } : {}),
+    ...(rawSignoff.dateSigned ? { dateSigned: rawSignoff.dateSigned } : {}),
+    ...(rawSignoff.verificationHash ? { verificationHash: rawSignoff.verificationHash } : {}),
+  };
+
+  return {
+    ...student,
+    id: student?.id ? String(student.id) : `student-${Date.now()}-${idx}`,
+    traineeInfo,
+    detailedLogs,
+    finalSignoff,
+    updatedAt: student?.updatedAt || new Date().toISOString(),
+  };
+}
+
 function loadStoreFromDisk() {
   try {
     ensureDataDirectory();
@@ -1153,7 +1200,7 @@ function loadStoreFromDisk() {
             safeId = `${safeId}-${i}`;
           }
           seenIds.add(safeId);
-          sanitized.push({ ...item, id: safeId });
+          sanitized.push(normalizeServerStudent({ ...item, id: safeId }, i));
         }
 
         let preceptorsList =
@@ -2221,15 +2268,24 @@ export function updateOrSaveStudent(
     throw new Error('Invalid student data');
   }
 
-  const studentId = student.id || student.traineeInfo?.traineeId;
-  const studentName = student.traineeInfo?.traineeName || 'Trainee';
+  // Ignore blank/unregistered placeholder records so they never overwrite enrolled students
+  if (String(student.id || '').startsWith('student-blank-') || (!student.traineeInfo?.traineeId?.trim() && !student.traineeInfo?.traineeName?.trim())) {
+    throw new Error('Cannot sync blank/unregistered trainee profile');
+  }
+
+  const normalized = normalizeServerStudent(student);
+  const studentId = normalized.id || normalized.traineeInfo?.traineeId;
+  const studentName = normalized.traineeInfo?.traineeName || 'Trainee';
 
   const existingIdx = inMemoryStore.cohortStudents.findIndex(
-    (s) => s.id === studentId || s.traineeInfo?.traineeId === student.traineeInfo?.traineeId
+    (s) =>
+      s.id === studentId ||
+      (normalized.traineeInfo?.traineeId && s.traineeInfo?.traineeId === normalized.traineeInfo?.traineeId)
   );
 
   const updatedRecord = {
-    ...student,
+    ...normalized,
+    id: existingIdx >= 0 ? inMemoryStore.cohortStudents[existingIdx].id : normalized.id,
     updatedAt: new Date().toISOString(),
   };
 
@@ -2280,14 +2336,16 @@ export function updateCohortRoster(
   if (!Array.isArray(cohort)) return inMemoryStore.cohortStudents;
 
   const seenIds = new Set<string>();
-  const sanitized = cohort.map((item, idx) => {
-    let safeId = item.id || `student-${Date.now()}-${idx}`;
-    if (seenIds.has(safeId)) {
-      safeId = `${safeId}-${idx}`;
-    }
-    seenIds.add(safeId);
-    return { ...item, id: safeId };
-  });
+  const sanitized = cohort
+    .filter((item) => item && typeof item === 'object')
+    .map((item, idx) => {
+      let safeId = item.id || `student-${Date.now()}-${idx}`;
+      if (seenIds.has(safeId)) {
+        safeId = `${safeId}-${idx}`;
+      }
+      seenIds.add(safeId);
+      return normalizeServerStudent({ ...item, id: safeId }, idx);
+    });
 
   inMemoryStore.cohortStudents = sanitized;
   saveStoreToDisk();
@@ -2361,9 +2419,14 @@ export function setupRealtimeWebSocket(server: http.Server) {
         wss.handleUpgrade(request, socket, head, (ws) => {
           wss.emit('connection', ws, request);
         });
+      } else {
+        socket.destroy();
       }
     } catch (err) {
       console.error('[CloudSync] WS Upgrade error:', err);
+      try {
+        socket.destroy();
+      } catch (e) {}
     }
   });
 

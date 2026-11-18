@@ -345,7 +345,7 @@ export function PartITrackingMatrix({
                               className="inline-flex items-center gap-1 text-xs font-semibold text-teal-800 hover:text-teal-950 px-2.5 py-1 rounded-lg hover:bg-teal-50 transition-colors"
                             >
                               <span>View Log</span>
-                              {log.attachments.length > 0 && (
+                              {(log.attachments?.length || 0) > 0 && (
                                 <Paperclip className="w-3 h-3 text-teal-700" />
                               )}
                             </button>

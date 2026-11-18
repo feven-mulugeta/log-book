@@ -1227,13 +1227,13 @@ export function InstructorCohortManager({
     e.target.value = '';
   };
 
-  const filteredStudents = cohortStudents.filter((s) => {
+  const filteredStudents = (cohortStudents || []).filter((s) => {
     if (!searchQuery.trim()) return true;
     const q = searchQuery.toLowerCase();
     return (
-      s.traineeInfo.traineeName.toLowerCase().includes(q) ||
-      s.traineeInfo.traineeId.toLowerCase().includes(q) ||
-      s.traineeInfo.clinicalDepartmentWard.toLowerCase().includes(q)
+      (s?.traineeInfo?.traineeName || '').toLowerCase().includes(q) ||
+      (s?.traineeInfo?.traineeId || '').toLowerCase().includes(q) ||
+      (s?.traineeInfo?.clinicalDepartmentWard || '').toLowerCase().includes(q)
     );
   });
 
@@ -1494,15 +1494,16 @@ export function InstructorCohortManager({
 
         {/* Preceptor List Grid */}
         {(() => {
-          const filteredPreceptors = preceptorsList.filter((p) => {
+          const filteredPreceptors = (preceptorsList || []).filter((p) => {
+            if (!p) return false;
             const q = preceptorSearchQuery.toLowerCase().trim();
             const matchesSearch =
               !q ||
-              p.name.toLowerCase().includes(q) ||
-              p.title.toLowerCase().includes(q) ||
-              p.wardDepartment.toLowerCase().includes(q) ||
-              p.initials.toLowerCase().includes(q) ||
-              (showPins && p.pin.includes(q));
+              (p.name || '').toLowerCase().includes(q) ||
+              (p.title || '').toLowerCase().includes(q) ||
+              (p.wardDepartment || '').toLowerCase().includes(q) ||
+              (p.initials || '').toLowerCase().includes(q) ||
+              (showPins && (p.pin || '').includes(q));
 
             const matchesRole = preceptorRoleFilter === 'all' || p.role === preceptorRoleFilter;
 
@@ -1829,13 +1830,13 @@ export function InstructorCohortManager({
 
         {/* Currently Active Student Evaluation Banner */}
         {(() => {
-          const currentStudent = cohortStudents.find(
-            (s) => s.traineeInfo.traineeId === currentStudentId || s.id === currentStudentId
+          const currentStudent = (cohortStudents || []).find(
+            (s) => s?.traineeInfo?.traineeId === currentStudentId || s?.id === currentStudentId
           );
           if (!currentStudent) return null;
 
           const currentMet = NCEP_SESSIONS_DEFINITIONS.filter((s) => {
-            const log = currentStudent.detailedLogs.find((l) => l.sessionNumber === s.sessionNumber);
+            const log = (currentStudent.detailedLogs || []).find((l) => l.sessionNumber === s.sessionNumber);
             return log?.status === 'Met';
           }).length;
 
@@ -1939,12 +1940,12 @@ export function InstructorCohortManager({
             <tbody className="divide-y divide-slate-200">
               {filteredStudents.map((student, sIdx) => {
                 const metCount = NCEP_SESSIONS_DEFINITIONS.filter((s) => {
-                  const log = student.detailedLogs.find((l) => l.sessionNumber === s.sessionNumber);
+                  const log = (student.detailedLogs || []).find((l) => l.sessionNumber === s.sessionNumber);
                   return log?.status === 'Met';
                 }).length;
 
                 const isCurrent =
-                  student.traineeInfo.traineeId === currentStudentId || student.id === currentStudentId;
+                  student.traineeInfo?.traineeId === currentStudentId || student.id === currentStudentId;
 
                 return (
                   <tr
@@ -2009,7 +2010,7 @@ export function InstructorCohortManager({
                     </td>
 
                     <td className="py-3 px-3 text-center">
-                      {student.finalSignoff.isCertified ? (
+                      {student.finalSignoff?.isCertified ? (
                         <span className="inline-flex items-center gap-1 text-[11px] font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-200">
                           <CheckCircle2 className="w-3 h-3" />
                           Certified

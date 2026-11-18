@@ -204,13 +204,65 @@ async function setupViteOrStatic() {
   setupRealtimeWebSocket(server);
 
   if (!isProduction) {
+    // Serve a safe no-reload /@vite/client shim before Vite middlewares so browsers behind
+    // Cloud Run never trigger Vite's HMR WebSocket reconnect / 60-second location.reload() loop,
+    // while still supporting CSS injection (updateStyle/removeStyle) and import.meta.hot stubs.
+    app.get('/@vite/client', (_req: Request, res: Response) => {
+      res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(`
+const sheetsMap = new Map();
+
+export function updateStyle(id, content) {
+  let style = sheetsMap.get(id);
+  if (!style) {
+    style = document.createElement('style');
+    style.setAttribute('type', 'text/css');
+    style.setAttribute('data-vite-dev-id', id);
+    style.textContent = content;
+    document.head.appendChild(style);
+    sheetsMap.set(id, style);
+  } else if (style.textContent !== content) {
+    style.textContent = content;
+  }
+}
+
+export function removeStyle(id) {
+  const style = sheetsMap.get(id);
+  if (style) {
+    if (style.parentNode) style.parentNode.removeChild(style);
+    sheetsMap.delete(id);
+  }
+}
+
+export function createHotContext() {
+  return {
+    data: {},
+    accept() {},
+    dispose() {},
+    prune() {},
+    decline() {},
+    invalidate() {},
+    on() {},
+    off() {},
+    send() {},
+  };
+}
+
+export function injectQuery(url) {
+  return url;
+}
+
+export class ErrorOverlay {}
+`);
+    });
+
     const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        watch: {
-          ignored: ['**/data/**', '**/ncep_store.json', '**/.git/**'],
-        },
+        hmr: false,
+        watch: null,
       },
       appType: 'spa',
     });

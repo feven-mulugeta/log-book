@@ -40,12 +40,12 @@ export function PartIIIFinalSignoff({
   const defaultLeadName = registeredLeadEducators[0]?.name || 'Mr. Yohannes Ayalew';
 
   const [leadEducatorName, setLeadEducatorName] = useState(
-    finalSignoff.leadEducatorName || defaultLeadName
+    finalSignoff?.leadEducatorName || defaultLeadName
   );
   const [showSigPad, setShowSigPad] = useState(false);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(
-    finalSignoff.signatureDataUrl || null
+    finalSignoff?.signatureDataUrl || null
   );
 
   const handleInitiateSign = () => {
@@ -57,7 +57,7 @@ export function PartIIIFinalSignoff({
   };
 
   const metCount = NCEP_SESSIONS_DEFINITIONS.filter((s) => {
-    const log = detailedLogs.find((l) => l.sessionNumber === s.sessionNumber);
+    const log = (detailedLogs || []).find((l) => l.sessionNumber === s.sessionNumber);
     return log?.status === 'Met';
   }).length;
 
@@ -256,14 +256,14 @@ export function PartIIIFinalSignoff({
             <div>
               <label className="block font-bold text-slate-700 mb-1">• Date:</label>
               <p className="font-mono font-semibold text-slate-900 py-2 border-b border-slate-300">
-                {finalSignoff.dateSigned || new Date().toISOString().slice(0, 10)}
+                {finalSignoff?.dateSigned || new Date().toISOString().slice(0, 10)}
               </p>
             </div>
           </div>
 
           <div>
             <label className="block font-bold text-slate-700 mb-2">• Signature:</label>
-            {finalSignoff.signatureDataUrl ? (
+            {finalSignoff?.signatureDataUrl ? (
               <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="h-14 w-48 bg-white rounded border border-slate-200 p-1">
@@ -274,7 +274,7 @@ export function PartIIIFinalSignoff({
                     />
                   </div>
                   <div>
-                    <p className="font-bold text-slate-900">{finalSignoff.leadEducatorName}</p>
+                    <p className="font-bold text-slate-900">{finalSignoff?.leadEducatorName}</p>
                     <p className="text-[11px] text-emerald-800 flex items-center gap-1 font-semibold">
                       <CheckCircle2 className="w-3.5 h-3.5" />
                       Academic Endorsement Confirmed
@@ -311,7 +311,7 @@ export function PartIIIFinalSignoff({
         </div>
 
         {/* Verification Token */}
-        {finalSignoff.verificationHash && (
+        {finalSignoff?.verificationHash && (
           <div className="pt-4 border-t border-slate-200 text-center font-sans text-[11px] text-slate-500 space-y-1">
             <p className="font-mono font-bold text-teal-900">
               OFFICIAL VERIFICATION HASH: {finalSignoff.verificationHash}

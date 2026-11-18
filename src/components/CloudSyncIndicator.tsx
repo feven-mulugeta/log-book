@@ -276,12 +276,12 @@ export function CloudSyncIndicator({
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-bold text-slate-800">Current Active Trainee Record:</span>
                   <span className="font-mono text-teal-900 font-bold">
-                    {currentStudent.traineeInfo.traineeId || 'AAU-NS-2024-0419'}
+                    {currentStudent?.traineeInfo?.traineeId || 'AAU-NS-2024-0419'}
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-[11px] text-slate-600">
-                  <span>Name: <strong>{currentStudent.traineeInfo.traineeName || 'Trainee'}</strong></span>
-                  <span>Ward: <strong>{currentStudent.traineeInfo.clinicalDepartmentWard || 'Ward 4B'}</strong></span>
+                  <span>Name: <strong>{currentStudent?.traineeInfo?.traineeName || 'Trainee'}</strong></span>
+                  <span>Ward: <strong>{currentStudent?.traineeInfo?.clinicalDepartmentWard || 'Ward 4B'}</strong></span>
                 </div>
                 <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px]">
                   <span className="text-slate-500">

@@ -1,0 +1,569 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Global Safety Net: Default Deny
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // --- Global Hardened Primitives ---
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && request.auth.token.email_verified == true;
+    }
+
+    function isOwner(userId) {
+      return isVerifiedUser() && request.auth.uid == userId;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isRootAdmin() {
+      return isVerifiedUser() && request.auth.token.email == 'feven.mulugeta@aau.edu.et';
+    }
+
+    // Only call in get/create/update/delete (NEVER inside allow list)
+    function isAdmin() {
+      return isRootAdmin() || (isVerifiedUser() && exists(/databases/$(database)/documents/admins/$(request.auth.uid)));
+    }
+
+    // Only call in get/create/update/delete (NEVER inside allow list)
+    function isStaffMember() {
+      return isVerifiedUser() && exists(/databases/$(database)/documents/staffMembers/$(request.auth.uid));
+    }
+
+    // --- Validation Blueprints ---
+    function isValidUserPublic(data) {
+      return data.keys().hasAll(['uid', 'displayName', 'role', 'linkedStudentId', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'displayName', 'role', 'linkedStudentId', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.displayName is string && data.displayName.size() <= 120
+        && data.role in ['member', 'admin']
+        && data.linkedStudentId is string && data.linkedStudentId.size() <= 128
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidUserPrivate(data) {
+      return data.keys().hasAll(['uid', 'email', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'email', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll(['uid', 'email', 'createdAt'])
+        && data.keys().hasOnly(['uid', 'email', 'createdAt'])
+        && isValidId(data.uid)
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 200
+        && data.createdAt is timestamp;
+    }
+
+    function isValidStaffSecret(data) {
+      return data.keys().hasAll(['preceptorId', 'name', 'role', 'title', 'wardDepartment', 'initials', 'pin', 'updatedAt'])
+        && data.keys().hasOnly(['preceptorId', 'name', 'role', 'title', 'wardDepartment', 'initials', 'pin', 'updatedAt'])
+        && isValidId(data.preceptorId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.role in ['preceptor', 'mentor', 'lead_educator']
+        && data.title is string && data.title.size() <= 120
+        && data.wardDepartment is string && data.wardDepartment.size() <= 120
+        && data.initials is string && data.initials.size() <= 10
+        && data.pin is string && data.pin.size() >= 4 && data.pin.size() <= 10
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStaffMember(data) {
+      return data.keys().hasAll(['uid', 'preceptorId', 'name', 'role', 'title', 'wardDepartment', 'initials', 'claimPin', 'createdAt', 'updatedAt'])
+        && data.keys().hasOnly(['uid', 'preceptorId', 'name', 'role', 'title', 'wardDepartment', 'initials', 'claimPin', 'createdAt', 'updatedAt'])
+        && isValidId(data.uid)
+        && data.uid == request.auth.uid
+        && isValidId(data.preceptorId)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.role in ['preceptor', 'mentor', 'lead_educator']
+        && data.title is string && data.title.size() <= 120
+        && data.wardDepartment is string && data.wardDepartment.size() <= 120
+        && data.initials is string && data.initials.size() <= 10
+        && data.claimPin is string && data.claimPin.size() <= 10
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidStudentSecret(data) {
+      return data.keys().hasAll(['studentId', 'pin', 'updatedAt'])
+        && data.keys().hasOnly(['studentId', 'pin', 'updatedAt'])
+        && isValidId(data.studentId)
+        && data.pin is string && data.pin.size() >= 4 && data.pin.size() <= 10
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidFinalSignoff(sig) {
+      return sig is map
+        && sig.keys().hasAll(['isCertified', 'leadEducatorName', 'leadEducatorTitle', 'signatureDataUrl', 'dateSigned', 'verificationHash'])
+        && sig.keys().hasOnly(['isCertified', 'leadEducatorName', 'leadEducatorTitle', 'signatureDataUrl', 'dateSigned', 'verificationHash'])
+        && sig.isCertified is bool
+        && sig.leadEducatorName is string && sig.leadEducatorName.size() <= 120
+        && sig.leadEducatorTitle is string && sig.leadEducatorTitle.size() <= 120
+        && sig.signatureDataUrl is string && sig.signatureDataUrl.size() <= 200000
+        && sig.dateSigned is string && sig.dateSigned.size() <= 32
+        && sig.verificationHash is string && sig.verificationHash.size() <= 128;
+    }
+
+    function isValidCohortStudent(data) {
+      return data.keys().hasAll([
+          'id', 'ownerUid', 'preceptorUid', 'claimPin',
+          'traineeName', 'traineeId', 'clinicalDepartmentWard',
+          'assignedClinicalPreceptor', 'trainingPeriodFrom', 'trainingPeriodTo',
+          'finalSignoff', 'logsSummaryCount', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'ownerUid', 'preceptorUid', 'claimPin',
+          'traineeName', 'traineeId', 'clinicalDepartmentWard',
+          'assignedClinicalPreceptor', 'trainingPeriodFrom', 'trainingPeriodTo',
+          'finalSignoff', 'logsSummaryCount', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && data.ownerUid is string && data.ownerUid.size() <= 128
+        && data.preceptorUid is string && data.preceptorUid.size() <= 128
+        && data.claimPin is string && data.claimPin.size() <= 10
+        && data.traineeName is string && data.traineeName.size() <= 120
+        && data.traineeId is string && data.traineeId.size() <= 64
+        && data.clinicalDepartmentWard is string && data.clinicalDepartmentWard.size() <= 120
+        && data.assignedClinicalPreceptor is string && data.assignedClinicalPreceptor.size() <= 120
+        && data.trainingPeriodFrom is string && data.trainingPeriodFrom.size() <= 32
+        && data.trainingPeriodTo is string && data.trainingPeriodTo.size() <= 32
+        && isValidFinalSignoff(data.finalSignoff)
+        && data.logsSummaryCount is number && data.logsSummaryCount >= 0 && data.logsSummaryCount <= 100
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPreceptorSignoff(sig) {
+      return sig is map
+        && sig.keys().hasAll(['isSigned', 'preceptorName', 'signatureDataUrl', 'dateSigned', 'preceptorInitials', 'competencyDemonstrated', 'comments'])
+        && sig.keys().hasOnly(['isSigned', 'preceptorName', 'signatureDataUrl', 'dateSigned', 'preceptorInitials', 'competencyDemonstrated', 'comments'])
+        && sig.isSigned is bool
+        && sig.preceptorName is string && sig.preceptorName.size() <= 120
+        && sig.signatureDataUrl is string && sig.signatureDataUrl.size() <= 200000
+        && sig.dateSigned is string && sig.dateSigned.size() <= 32
+        && sig.preceptorInitials is string && sig.preceptorInitials.size() <= 16
+        && sig.competencyDemonstrated in ['Satisfactory', 'Needs Improvement', 'Unsatisfactory']
+        && sig.comments is string && sig.comments.size() <= 4000;
+    }
+
+    function isValidActivityLog(data) {
+      return data.keys().hasAll([
+          'id', 'studentId', 'ownerUid', 'preceptorUid',
+          'sessionNumber', 'sessionTitle', 'subCompetencyId', 'subCompetencyTitle',
+          'dateOfActivity', 'durationHours', 'clinicalSettingWard',
+          'activityDescription', 'reflectiveNotesLessonsLearned', 'attachmentsCount',
+          'preceptorSignoff', 'status', 'source', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'studentId', 'ownerUid', 'preceptorUid',
+          'sessionNumber', 'sessionTitle', 'subCompetencyId', 'subCompetencyTitle',
+          'dateOfActivity', 'durationHours', 'clinicalSettingWard',
+          'activityDescription', 'reflectiveNotesLessonsLearned', 'attachmentsCount',
+          'preceptorSignoff', 'status', 'source', 'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.studentId)
+        && data.ownerUid is string && data.ownerUid.size() <= 128
+        && data.preceptorUid is string && data.preceptorUid.size() <= 128
+        && data.sessionNumber is number && data.sessionNumber >= 1 && data.sessionNumber <= 18
+        && data.sessionTitle is string && data.sessionTitle.size() <= 250
+        && data.subCompetencyId in ['sub_comp_1', 'sub_comp_2', 'sub_comp_3', 'sub_comp_4', 'sub_comp_5', 'sub_comp_6']
+        && data.subCompetencyTitle is string && data.subCompetencyTitle.size() <= 250
+        && data.dateOfActivity is string && data.dateOfActivity.size() <= 32
+        && data.durationHours is number && data.durationHours >= 0 && data.durationHours <= 240
+        && data.clinicalSettingWard is string && data.clinicalSettingWard.size() <= 120
+        && data.activityDescription is string && data.activityDescription.size() <= 10000
+        && data.reflectiveNotesLessonsLearned is string && data.reflectiveNotesLessonsLearned.size() <= 10000
+        && data.attachmentsCount is number && data.attachmentsCount >= 0 && data.attachmentsCount <= 50
+        && isValidPreceptorSignoff(data.preceptorSignoff)
+        && data.status in ['Pending', 'Met']
+        && data.source in ['manual', 'ocr_scan']
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidEvidenceAttachment(data) {
+      return data.keys().hasAll([
+          'id', 'studentId', 'logId', 'ownerUid', 'preceptorUid',
+          'name', 'type', 'dataUrl', 'notes', 'uploadedAt', 'sizeBytes',
+          'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'id', 'studentId', 'logId', 'ownerUid', 'preceptorUid',
+          'name', 'type', 'dataUrl', 'notes', 'uploadedAt', 'sizeBytes',
+          'createdAt', 'updatedAt'
+        ])
+        && isValidId(data.id)
+        && isValidId(data.studentId)
+        && isValidId(data.logId)
+        && data.ownerUid is string && data.ownerUid.size() <= 128
+        && data.preceptorUid is string && data.preceptorUid.size() <= 128
+        && data.name is string && data.name.size() <= 200
+        && data.type is string && data.type.size() <= 40
+        && data.dataUrl is string && data.dataUrl.size() <= 750000
+        && data.notes is string && data.notes.size() <= 1000
+        && data.uploadedAt is string && data.uploadedAt.size() <= 64
+        && data.sizeBytes is number && data.sizeBytes >= 0 && data.sizeBytes <= 1048576
+        && data.createdAt is timestamp
+        && data.updatedAt is timestamp;
+    }
+
+    // --- Collection Rules ---
+
+    // 1. Public User Profiles (No PII) & Isolated Private Info
+    match /users/{userId} {
+      allow get: if isVerifiedUser() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isVerifiedUser() && (isRootAdmin() || resource.data.uid == request.auth.uid);
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidUserPublic(incoming())
+        && isOwner(userId)
+        && incoming().uid == request.auth.uid
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (incoming().role == 'member' || isRootAdmin());
+
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidUserPublic(incoming())
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (isOwner(userId)
+            && incoming().role == existing().role
+            && incoming().diff(existing()).affectedKeys().hasOnly(['displayName', 'linkedStudentId', 'updatedAt']))
+        );
+
+      allow delete: if false;
+
+      match /private/{docId} {
+        allow get: if isVerifiedUser() && isValidId(userId) && docId == 'info' && (isOwner(userId) || isAdmin());
+        allow list: if false;
+
+        allow create: if isVerifiedUser()
+          && isValidId(userId)
+          && docId == 'info'
+          && isValidUserPrivate(incoming())
+          && (isOwner(userId) || isAdmin())
+          && incoming().uid == userId
+          && incoming().updatedAt == request.time;
+
+        allow update: if isVerifiedUser()
+          && isValidId(userId)
+          && docId == 'info'
+          && isValidUserPrivate(incoming())
+          && (isOwner(userId) || isAdmin())
+          && incoming().uid == existing().uid
+          && incoming().updatedAt == request.time
+          && incoming().diff(existing()).affectedKeys().hasOnly(['email', 'updatedAt']);
+
+        allow delete: if false;
+      }
+    }
+
+    // 2. Admins Registry
+    match /admins/{userId} {
+      allow get: if isVerifiedUser() && isValidId(userId) && (isOwner(userId) || isRootAdmin());
+      allow list: if isVerifiedUser() && isRootAdmin();
+      allow create: if isRootAdmin() && isValidId(userId) && isValidAdminRecord(incoming()) && incoming().createdAt == request.time;
+      allow update: if isRootAdmin() && isValidId(userId) && isValidAdminRecord(incoming()) && incoming().uid == existing().uid && incoming().createdAt == existing().createdAt && incoming().diff(existing()).affectedKeys().hasOnly(['email']);
+      allow delete: if isRootAdmin() && isValidId(userId);
+    }
+
+    // 3. Admin-Only Staff PIN Verification Secrets
+    match /staffSecrets/{preceptorId} {
+      allow get: if isVerifiedUser() && isValidId(preceptorId) && isAdmin();
+      allow list: if isVerifiedUser() && isRootAdmin();
+      allow create: if isVerifiedUser() && isValidId(preceptorId) && isAdmin() && isValidStaffSecret(incoming()) && incoming().preceptorId == preceptorId && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser() && isValidId(preceptorId) && isAdmin() && isValidStaffSecret(incoming()) && incoming().preceptorId == existing().preceptorId && incoming().updatedAt == request.time && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'title', 'wardDepartment', 'initials', 'pin', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(preceptorId) && isAdmin();
+    }
+
+    // 4. Verified Clinical Preceptors & Mentors
+    match /staffMembers/{userId} {
+      allow get: if isVerifiedUser() && isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isVerifiedUser() && (isRootAdmin() || resource.data.uid == request.auth.uid);
+
+      allow create: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidStaffMember(incoming())
+        && isOwner(userId)
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            exists(/databases/$(database)/documents/staffSecrets/$(incoming().preceptorId))
+            && get(/databases/$(database)/documents/staffSecrets/$(incoming().preceptorId)).data.pin == incoming().claimPin
+            && get(/databases/$(database)/documents/staffSecrets/$(incoming().preceptorId)).data.role == incoming().role
+          )
+        );
+
+      allow update: if isVerifiedUser()
+        && isValidId(userId)
+        && isValidStaffMember(incoming())
+        && isAdmin()
+        && incoming().uid == existing().uid
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && incoming().diff(existing()).affectedKeys().hasOnly(['preceptorId', 'name', 'role', 'title', 'wardDepartment', 'initials', 'updatedAt']);
+
+      allow delete: if isVerifiedUser() && isValidId(userId) && isAdmin();
+    }
+
+    // 5. Admin-Only Student PIN Verification Secrets
+    match /studentSecrets/{studentId} {
+      allow get: if isVerifiedUser() && isValidId(studentId) && isAdmin();
+      allow list: if isVerifiedUser() && isRootAdmin();
+      allow create: if isVerifiedUser() && isValidId(studentId) && isAdmin() && isValidStudentSecret(incoming()) && incoming().studentId == studentId && incoming().updatedAt == request.time;
+      allow update: if isVerifiedUser() && isValidId(studentId) && isAdmin() && isValidStudentSecret(incoming()) && incoming().studentId == existing().studentId && incoming().updatedAt == request.time && incoming().diff(existing()).affectedKeys().hasOnly(['pin', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(studentId) && isAdmin();
+    }
+
+    // 6. Enrolled Trainee Dossiers + Subcollections (Logs & Evidence Attachments)
+    match /cohortStudents/{studentId} {
+      allow get: if isVerifiedUser()
+        && isValidId(studentId)
+        && (isAdmin() || existing().ownerUid == request.auth.uid || isStaffMember());
+
+      // Pillar 8: Zero get()/exists() in allow list; strictly evaluate resource.data
+      allow list: if isVerifiedUser()
+        && (isRootAdmin() || resource.data.ownerUid == request.auth.uid || resource.data.preceptorUid == request.auth.uid);
+
+      allow create: if isVerifiedUser()
+        && isValidId(studentId)
+        && isValidCohortStudent(incoming())
+        && incoming().id == studentId
+        && incoming().createdAt == request.time
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          (
+            incoming().ownerUid == request.auth.uid
+            && incoming().finalSignoff.isCertified == false
+            && (
+              !exists(/databases/$(database)/documents/studentSecrets/$(studentId)) ||
+              get(/databases/$(database)/documents/studentSecrets/$(studentId)).data.pin == incoming().claimPin
+            )
+          )
+        );
+
+      allow update: if isVerifiedUser()
+        && isValidId(studentId)
+        && isValidCohortStudent(incoming())
+        && incoming().id == existing().id
+        && incoming().createdAt == existing().createdAt
+        && incoming().updatedAt == request.time
+        && (
+          isAdmin() ||
+          // Action 1: Unclaimed roster dossier claimed by verified trainee with matching PIN
+          (
+            existing().ownerUid == ''
+            && incoming().ownerUid == request.auth.uid
+            && existing().finalSignoff.isCertified == false
+            && incoming().finalSignoff.isCertified == false
+            && exists(/databases/$(database)/documents/studentSecrets/$(studentId))
+            && get(/databases/$(database)/documents/studentSecrets/$(studentId)).data.pin == incoming().claimPin
+            && incoming().diff(existing()).affectedKeys().hasOnly(['ownerUid', 'claimPin', 'updatedAt'])
+          ) ||
+          // Action 2: Trainee updates own dossier fields (locked if certified; cannot self-certify)
+          (
+            existing().ownerUid == request.auth.uid
+            && incoming().ownerUid == existing().ownerUid
+            && existing().finalSignoff.isCertified == false
+            && incoming().finalSignoff.isCertified == false
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'traineeName', 'traineeId', 'clinicalDepartmentWard',
+              'assignedClinicalPreceptor', 'trainingPeriodFrom', 'trainingPeriodTo',
+              'logsSummaryCount', 'updatedAt'
+            ])
+          ) ||
+          // Action 3: Verified Preceptor / Mentor updates rotation or signs Part III (terminal lock unless admin)
+          (
+            isStaffMember()
+            && incoming().ownerUid == existing().ownerUid
+            && existing().finalSignoff.isCertified == false
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'preceptorUid', 'clinicalDepartmentWard', 'assignedClinicalPreceptor',
+              'trainingPeriodFrom', 'trainingPeriodTo', 'finalSignoff',
+              'logsSummaryCount', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isVerifiedUser() && isValidId(studentId) && isAdmin();
+
+      // 6a. Part II Detailed Clinical Activity Log Sheets (Master Gate on parent /cohortStudents/{studentId})
+      match /logs/{logId} {
+        allow get: if isVerifiedUser()
+          && isValidId(studentId)
+          && isValidId(logId)
+          && exists(/databases/$(database)/documents/cohortStudents/$(studentId))
+          && (
+            isAdmin() ||
+            get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid == request.auth.uid ||
+            isStaffMember()
+          );
+
+        allow list: if isVerifiedUser()
+          && (isRootAdmin() || resource.data.ownerUid == request.auth.uid || resource.data.preceptorUid == request.auth.uid);
+
+        allow create: if isVerifiedUser()
+          && isValidId(studentId)
+          && isValidId(logId)
+          && isValidActivityLog(incoming())
+          && incoming().id == logId
+          && incoming().studentId == studentId
+          && incoming().createdAt == request.time
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/cohortStudents/$(studentId))
+          && (
+            isAdmin() ||
+            // Trainee creates Pending, unsigned log entry for own dossier
+            (
+              get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid == request.auth.uid
+              && incoming().ownerUid == request.auth.uid
+              && incoming().status == 'Pending'
+              && incoming().preceptorSignoff.isSigned == false
+            ) ||
+            // Verified Preceptor/Mentor creates quick-sign log entry
+            (
+              isStaffMember()
+              && incoming().ownerUid == get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid
+              && incoming().preceptorUid == request.auth.uid
+            )
+          );
+
+        allow update: if isVerifiedUser()
+          && isValidId(studentId)
+          && isValidId(logId)
+          && isValidActivityLog(incoming())
+          && incoming().id == existing().id
+          && incoming().studentId == existing().studentId
+          && incoming().ownerUid == existing().ownerUid
+          && incoming().createdAt == existing().createdAt
+          && incoming().updatedAt == request.time
+          && exists(/databases/$(database)/documents/cohortStudents/$(studentId))
+          && (
+            isAdmin() ||
+            // Trainee edits own Pending log (cannot mark Met or sign preceptorSignoff)
+            (
+              get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid == request.auth.uid
+              && existing().status == 'Pending'
+              && incoming().status == 'Pending'
+              && incoming().preceptorSignoff.isSigned == false
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'dateOfActivity', 'durationHours', 'clinicalSettingWard',
+                'activityDescription', 'reflectiveNotesLessonsLearned',
+                'attachmentsCount', 'source', 'updatedAt'
+              ])
+            ) ||
+            // Verified Preceptor/Mentor evaluates & signs log
+            (
+              isStaffMember()
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'preceptorUid', 'dateOfActivity', 'clinicalSettingWard',
+                'preceptorSignoff', 'status', 'updatedAt'
+              ])
+            )
+          );
+
+        allow delete: if isVerifiedUser()
+          && isValidId(studentId)
+          && isValidId(logId)
+          && exists(/databases/$(database)/documents/cohortStudents/$(studentId))
+          && isAdmin();
+
+        // 6b. Evidence Attachments (Master Gate on parent log & grandparent student dossier)
+        match /attachments/{attachmentId} {
+          allow get: if isVerifiedUser()
+            && isValidId(studentId)
+            && isValidId(logId)
+            && isValidId(attachmentId)
+            && exists(/databases/$(database)/documents/cohortStudents/$(studentId))
+            && exists(/databases/$(database)/documents/cohortStudents/$(studentId)/logs/$(logId))
+            && (
+              isAdmin() ||
+              get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid == request.auth.uid ||
+              isStaffMember()
+            );
+
+          allow list: if isVerifiedUser()
+            && (isRootAdmin() || resource.data.ownerUid == request.auth.uid || resource.data.preceptorUid == request.auth.uid);
+
+          allow create: if isVerifiedUser()
+            && isValidId(studentId)
+            && isValidId(logId)
+            && isValidId(attachmentId)
+            && isValidEvidenceAttachment(incoming())
+            && incoming().id == attachmentId
+            && incoming().studentId == studentId
+            && incoming().logId == logId
+            && incoming().createdAt == request.time
+            && incoming().updatedAt == request.time
+            && exists(/databases/$(database)/documents/cohortStudents/$(studentId))
+            && exists(/databases/$(database)/documents/cohortStudents/$(studentId)/logs/$(logId))
+            && (
+              isAdmin() ||
+              (
+                get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid == request.auth.uid
+                && incoming().ownerUid == request.auth.uid
+              )
+            );
+
+          allow update: if isVerifiedUser()
+            && isValidId(studentId)
+            && isValidId(logId)
+            && isValidId(attachmentId)
+            && isValidEvidenceAttachment(incoming())
+            && incoming().id == existing().id
+            && incoming().studentId == existing().studentId
+            && incoming().logId == existing().logId
+            && incoming().ownerUid == existing().ownerUid
+            && incoming().createdAt == existing().createdAt
+            && incoming().updatedAt == request.time
+            && exists(/databases/$(database)/documents/cohortStudents/$(studentId))
+            && exists(/databases/$(database)/documents/cohortStudents/$(studentId)/logs/$(logId))
+            && (
+              isAdmin() ||
+              (
+                get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid == request.auth.uid
+                && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'type', 'notes', 'updatedAt'])
+              )
+            );
+
+          allow delete: if isVerifiedUser()
+            && isValidId(studentId)
+            && isValidId(logId)
+            && isValidId(attachmentId)
+            && exists(/databases/$(database)/documents/cohortStudents/$(studentId))
+            && (
+              isAdmin() ||
+              get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid == request.auth.uid
+            );
+        }
+      }
+    }
+  }
+}

@@ -142,12 +142,12 @@ export function PartIIDetailedLogSheets({
 
   const handleOpenEdit = (log: DetailedActivityLogSheet) => {
     setSelectedSessionNumber(log.sessionNumber);
-    setDateOfActivity(log.dateOfActivity);
-    setDurationHours(log.durationHours);
-    setClinicalSettingWard(log.clinicalSettingWard);
-    setActivityDescription(log.activityDescription);
-    setReflectiveNotes(log.reflectiveNotesLessonsLearned);
-    setAttachments(log.attachments);
+    setDateOfActivity(log.dateOfActivity || '');
+    setDurationHours(log.durationHours || 4);
+    setClinicalSettingWard(log.clinicalSettingWard || '');
+    setActivityDescription(log.activityDescription || '');
+    setReflectiveNotes(log.reflectiveNotesLessonsLearned || '');
+    setAttachments(Array.isArray(log.attachments) ? log.attachments : []);
     setEditingLogId(log.id);
     setIsEditorOpen(true);
   };
@@ -379,7 +379,7 @@ export function PartIIDetailedLogSheets({
                       <div>
                         <h4 className="text-xs font-bold font-sans text-slate-900 uppercase flex items-center gap-1.5">
                           <Paperclip className="w-3.5 h-3.5 text-teal-800" />
-                          <span>Session Learning Evidence Attachments ({log.attachments.length})</span>
+                          <span>Session Learning Evidence Attachments ({(log.attachments || []).length})</span>
                         </h4>
                         <p className="text-[11px] text-slate-500 font-sans">
                           Expected for this session:{' '}
@@ -399,9 +399,9 @@ export function PartIIDetailedLogSheets({
                       </button>
                     </div>
 
-                    {log.attachments.length > 0 ? (
+                    {(log.attachments || []).length > 0 ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {log.attachments.map((att) => (
+                        {(log.attachments || []).map((att) => (
                           <div
                             key={att.id}
                             onClick={() => setLightboxAttachment(att)}

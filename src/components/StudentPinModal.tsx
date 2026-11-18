@@ -112,8 +112,9 @@ export function StudentPinModal({
           {/* Target Student Identity Card */}
           <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3">
             <div className="w-10 h-10 rounded-full bg-teal-100 border border-teal-300 text-teal-900 font-bold text-xs flex items-center justify-center shrink-0">
-              {student.traineeInfo.traineeName
+              {(student.traineeInfo?.traineeName || 'Trainee')
                 .split(' ')
+                .filter(Boolean)
                 .map((n) => n[0])
                 .slice(0, 2)
                 .join('')

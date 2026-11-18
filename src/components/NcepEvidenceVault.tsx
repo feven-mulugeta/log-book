@@ -28,9 +28,9 @@ export function NcepEvidenceVault({
 
   // Flatten all attachments across the 18 sessions
   const allEvidence: { attachment: EvidenceAttachment; log: DetailedActivityLogSheet }[] = [];
-  logs.forEach((log) => {
-    log.attachments.forEach((att) => {
-      allEvidence.push({ attachment: att, log });
+  (logs || []).forEach((log) => {
+    (log?.attachments || []).forEach((att) => {
+      if (att) allEvidence.push({ attachment: att, log });
     });
   });
 
@@ -38,9 +38,9 @@ export function NcepEvidenceVault({
     if (selectedType !== 'all' && attachment.type !== selectedType) return false;
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
-      const matchName = attachment.name.toLowerCase().includes(q);
+      const matchName = (attachment.name || '').toLowerCase().includes(q);
       const matchNotes = (attachment.notes || '').toLowerCase().includes(q);
-      const matchSession = log.sessionTitle.toLowerCase().includes(q);
+      const matchSession = (log.sessionTitle || '').toLowerCase().includes(q);
       if (!matchName && !matchNotes && !matchSession) return false;
     }
     return true;

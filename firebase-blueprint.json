@@ -1,0 +1,493 @@
+{
+  "entities": {
+    "UserPublic": {
+      "title": "UserPublic",
+      "description": "Non-PII user account profile linked to Firebase Auth UID.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "displayName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["member", "admin"]
+        },
+        "linkedStudentId": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "displayName", "role", "linkedStudentId", "createdAt", "updatedAt"]
+    },
+    "UserPrivate": {
+      "title": "UserPrivate",
+      "description": "Isolated PII document storing authenticated user email.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "updatedAt"]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Explicit coordinator/admin marker document.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "email": {
+          "type": "string",
+          "format": "email",
+          "maxLength": 200
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "StaffSecret": {
+      "title": "StaffSecret",
+      "description": "Admin-only PIN verification record for registered clinical preceptors, mentors, and lead educators.",
+      "type": "object",
+      "properties": {
+        "preceptorId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["preceptor", "mentor", "lead_educator"]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "wardDepartment": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "initials": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "pin": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 10
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["preceptorId", "name", "role", "title", "wardDepartment", "initials", "pin", "updatedAt"]
+    },
+    "StaffMember": {
+      "title": "StaffMember",
+      "description": "Verified clinical preceptor, mentor, or lead educator linked to a Google Auth UID via PIN verification.",
+      "type": "object",
+      "properties": {
+        "uid": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "preceptorId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["preceptor", "mentor", "lead_educator"]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "wardDepartment": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "initials": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "claimPin": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["uid", "preceptorId", "name", "role", "title", "wardDepartment", "initials", "claimPin", "createdAt", "updatedAt"]
+    },
+    "StudentSecret": {
+      "title": "StudentSecret",
+      "description": "Admin-only 4-digit PIN record used by Firestore rules to verify student profile claims.",
+      "type": "object",
+      "properties": {
+        "studentId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "pin": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 10
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["studentId", "pin", "updatedAt"]
+    },
+    "CohortStudent": {
+      "title": "CohortStudent",
+      "description": "Persistent trainee profile, clinical rotation assignment, and Part III final competency sign-off.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "preceptorUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "claimPin": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "traineeName": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "traineeId": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "clinicalDepartmentWard": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "assignedClinicalPreceptor": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "trainingPeriodFrom": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "trainingPeriodTo": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "finalSignoff": {
+          "type": "object"
+        },
+        "logsSummaryCount": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "ownerUid",
+        "preceptorUid",
+        "claimPin",
+        "traineeName",
+        "traineeId",
+        "clinicalDepartmentWard",
+        "assignedClinicalPreceptor",
+        "trainingPeriodFrom",
+        "trainingPeriodTo",
+        "finalSignoff",
+        "logsSummaryCount",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "ActivityLogEntry": {
+      "title": "ActivityLogEntry",
+      "description": "Part II detailed clinical activity log sheet and preceptor formative sign-off.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "studentId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "preceptorUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "sessionNumber": {
+          "type": "number"
+        },
+        "sessionTitle": {
+          "type": "string",
+          "maxLength": 250
+        },
+        "subCompetencyId": {
+          "type": "string",
+          "enum": ["sub_comp_1", "sub_comp_2", "sub_comp_3", "sub_comp_4", "sub_comp_5", "sub_comp_6"]
+        },
+        "subCompetencyTitle": {
+          "type": "string",
+          "maxLength": 250
+        },
+        "dateOfActivity": {
+          "type": "string",
+          "maxLength": 32
+        },
+        "durationHours": {
+          "type": "number"
+        },
+        "clinicalSettingWard": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "activityDescription": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "reflectiveNotesLessonsLearned": {
+          "type": "string",
+          "maxLength": 10000
+        },
+        "attachmentsCount": {
+          "type": "number"
+        },
+        "attachmentIds": {
+          "type": "array",
+          "description": "Bounded list of up to 10 attachment IDs for direct document retrieval."
+        },
+        "preceptorSignoff": {
+          "type": "object"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["Pending", "Met"]
+        },
+        "source": {
+          "type": "string",
+          "enum": ["manual", "ocr_scan"]
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "studentId",
+        "ownerUid",
+        "preceptorUid",
+        "sessionNumber",
+        "sessionTitle",
+        "subCompetencyId",
+        "subCompetencyTitle",
+        "dateOfActivity",
+        "durationHours",
+        "clinicalSettingWard",
+        "activityDescription",
+        "reflectiveNotesLessonsLearned",
+        "attachmentsCount",
+        "attachmentIds",
+        "preceptorSignoff",
+        "status",
+        "source",
+        "createdAt",
+        "updatedAt"
+      ]
+    },
+    "EvidenceAttachmentRecord": {
+      "title": "EvidenceAttachmentRecord",
+      "description": "Bounded evidence attachment document stored under a session log.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "studentId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "logId": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "ownerUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "preceptorUid": {
+          "type": "string",
+          "maxLength": 128
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 200
+        },
+        "type": {
+          "type": "string",
+          "maxLength": 40
+        },
+        "dataUrl": {
+          "type": "string",
+          "maxLength": 750000
+        },
+        "notes": {
+          "type": "string",
+          "maxLength": 1000
+        },
+        "uploadedAt": {
+          "type": "string",
+          "maxLength": 64
+        },
+        "sizeBytes": {
+          "type": "number"
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "id",
+        "studentId",
+        "logId",
+        "ownerUid",
+        "preceptorUid",
+        "name",
+        "type",
+        "dataUrl",
+        "notes",
+        "uploadedAt",
+        "sizeBytes",
+        "createdAt",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserPublic" },
+      "description": "Public user account metadata."
+    },
+    "/users/{userId}/private/{docId}": {
+      "schema": { "$ref": "#/entities/UserPrivate" },
+      "description": "Isolated PII document containing user email."
+    },
+    "/admins/{userId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Admin/Lead Coordinator registry."
+    },
+    "/staffSecrets/{preceptorId}": {
+      "schema": { "$ref": "#/entities/StaffSecret" },
+      "description": "Admin-only secret PIN records for clinical preceptors and mentors."
+    },
+    "/staffMembers/{userId}": {
+      "schema": { "$ref": "#/entities/StaffMember" },
+      "description": "Verified clinical preceptor and mentor accounts linked to Firebase Auth UIDs."
+    },
+    "/studentSecrets/{studentId}": {
+      "schema": { "$ref": "#/entities/StudentSecret" },
+      "description": "Admin-only student 4-digit PIN verification store."
+    },
+    "/cohortStudents/{studentId}": {
+      "schema": { "$ref": "#/entities/CohortStudent" },
+      "description": "Enrolled nursing trainee dossier headers and final sign-offs."
+    },
+    "/cohortStudents/{studentId}/logs/{logId}": {
+      "schema": { "$ref": "#/entities/ActivityLogEntry" },
+      "description": "Part II detailed clinical activity log sheets per session."
+    },
+    "/cohortStudents/{studentId}/logs/{logId}/attachments/{attachmentId}": {
+      "schema": { "$ref": "#/entities/EvidenceAttachmentRecord" },
+      "description": "Clinical evidence attachments for a session log sheet."
+    }
+  }
+}

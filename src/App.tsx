@@ -20,6 +20,10 @@ import {
   Lock,
   Unlock,
   KeyRound,
+  Database,
+  LogIn,
+  LogOut,
+  AlertCircle,
 } from 'lucide-react';
 import {
   TraineeInformation,
@@ -35,6 +39,7 @@ import {
   getStoredFinalSignoff,
   getStoredUserRole,
   getStoredCohortStudents,
+  getStoredPreceptors,
   saveStoredTraineeInfo,
   saveStoredDetailedLogs,
   saveStoredFinalSignoff,
@@ -49,6 +54,10 @@ import {
   lockStudent,
   lockAllStudents,
   getStudentPin,
+  normalizeStudentRecord,
+  normalizeTraineeInfo,
+  normalizeDetailedLog,
+  normalizeFinalSignoff,
   UserRole,
 } from './utils/storage';
 import { NCEP_SESSIONS_DEFINITIONS } from './data/ncepData';
@@ -67,6 +76,19 @@ import { StudentChangePinModal } from './components/StudentChangePinModal';
 import { ShareAccessModal } from './components/ShareAccessModal';
 import { cloudSync } from './utils/cloudSync';
 import { CloudSyncIndicator } from './components/CloudSyncIndicator';
+import { useFirebaseAuth } from './contexts/FirebaseContext';
+import {
+  ensureUserDocuments,
+  checkIsStaffInFirestore,
+  seedInitialInstitutionalDataIfAdmin,
+  loadAllCohortStudentsForAdmin,
+  loadOwnedStudentsForUser,
+  loadStudentFromFirestore,
+  saveStudentDossierToFirestore,
+  registerStaffMemberInFirestore,
+  deleteStudentFromFirestoreIfAdmin,
+  toFirestoreSafeId,
+} from './utils/firestoreSync';
 
 type TabType = 'page1' | 'part1' | 'part2' | 'part3' | 'cohort' | 'ocr' | 'vault';
 
@@ -98,30 +120,56 @@ export default function App() {
   const [isChangePinModalOpen, setIsChangePinModalOpen] = useState<boolean>(false);
   const [, setSessionUnlockCounter] = useState<number>(0);
 
+  // Permanent Firebase Cloud Database auth & status
+  const {
+    user: firebaseUser,
+    authReady,
+    isRootAdmin,
+    isSigningIn,
+    authError,
+    signInWithGoogle,
+    signOutGoogle,
+    clearAuthError,
+  } = useFirebaseAuth();
+  const [isFirestoreStaff, setIsFirestoreStaff] = useState<boolean>(false);
+  const [firestoreSaveStatus, setFirestoreSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
+  const [firestoreErrorMsg, setFirestoreErrorMsg] = useState<string | null>(null);
+  const [dismissAuthBanner, setDismissAuthBanner] = useState<boolean>(false);
+  const firestoreDebounceRef = useRef<any>(null);
+
   // Stable refs to access current values inside one-time cloudSync subscription without re-subscribing
   const currentStudentRosterIdRef = useRef(currentStudentRosterId);
   currentStudentRosterIdRef.current = currentStudentRosterId;
 
-  const activeTraineeIdRef = useRef(traineeInfo.traineeId);
-  activeTraineeIdRef.current = traineeInfo.traineeId;
+  const activeTraineeIdRef = useRef(traineeInfo?.traineeId || '');
+  activeTraineeIdRef.current = traineeInfo?.traineeId || '';
 
-  // Flag and hash check to avoid echo loops when applying remote updates
+  const cohortStudentsRef = useRef(cohortStudents);
+  cohortStudentsRef.current = cohortStudents;
+
+  const detailedLogsRef = useRef(detailedLogs);
+  detailedLogsRef.current = detailedLogs;
+
+  // Flag and hash check to avoid echo loops and initial-mount broadcasts
   const isRemoteUpdateRef = useRef(false);
+  const hasMountedSyncRef = useRef(false);
   const lastSyncedHashRef = useRef<string>('');
+  const lastFirestoreHashRef = useRef<string>('');
 
   const computeStudentHash = (student: CohortStudentRecord) => {
-    const t = student.traineeInfo;
-    const logsCount = student.detailedLogs?.length || 0;
-    const logsSummary = (student.detailedLogs || [])
+    const t = student?.traineeInfo;
+    const logs = Array.isArray(student?.detailedLogs) ? student.detailedLogs : [];
+    const logsCount = logs.length;
+    const logsSummary = logs
       .map(
         (l) =>
-          `${l.sessionNumber}:${l.status}:${l.dateOfActivity}:${l.preceptorSignoff?.isSigned ? '1' : '0'}`
+          `${l.sessionNumber}:${l.status}:${l.dateOfActivity}:${l.activityDescription?.length || 0}:${l.reflectiveNotesLessonsLearned?.length || 0}:${l.attachments?.length || 0}:${l.preceptorSignoff?.isSigned ? '1' : '0'}`
       )
       .join('|');
-    const signoffSummary = student.finalSignoff
+    const signoffSummary = student?.finalSignoff
       ? `${student.finalSignoff.isCertified ? '1' : '0'}:${student.finalSignoff.verificationHash || ''}`
       : '0';
-    return `${student.id}_${t?.traineeId}_${t?.traineeName}_${t?.clinicalDepartmentWard}_${logsCount}_${logsSummary}_${signoffSummary}`;
+    return `${student?.id || ''}_${t?.traineeId || ''}_${t?.traineeName || ''}_${t?.clinicalDepartmentWard || ''}_${t?.assignedClinicalPreceptor || ''}_${t?.studentPin || ''}_${logsCount}_${logsSummary}_${signoffSummary}`;
   };
 
   // Check URL parameters for direct role links (e.g. ?role=preceptor or ?role=lead_educator or ?tab=cohort)
@@ -147,7 +195,9 @@ export default function App() {
   useEffect(() => {
     cloudSync.init();
 
-    const unsubStudent = cloudSync.onStudentUpdated((remoteStudent) => {
+    const unsubStudent = cloudSync.onStudentUpdated((rawRemoteStudent) => {
+      const remoteStudent = normalizeStudentRecord(rawRemoteStudent);
+
       // 1. Update in cohort list
       setCohortStudents((prev) => {
         const idx = prev.findIndex(
@@ -165,22 +215,24 @@ export default function App() {
         return [remoteStudent, ...prev];
       });
 
-      // 2. If it's the currently active student, update active screen state!
+      // 2. If it's the currently active student, update active screen state safely!
       const currentActiveId = currentStudentRosterIdRef.current;
       const currentTraineeId = activeTraineeIdRef.current;
 
       if (
         remoteStudent.id === currentActiveId ||
         (remoteStudent.traineeInfo?.traineeId &&
+          currentTraineeId &&
           remoteStudent.traineeInfo.traineeId === currentTraineeId)
       ) {
         // Mark remote update and record hash so auto-broadcast will NOT re-send this back!
         isRemoteUpdateRef.current = true;
-        lastSyncedHashRef.current = computeStudentHash(remoteStudent);
+        const normalizedForActive = { ...remoteStudent, id: currentActiveId || remoteStudent.id };
+        lastSyncedHashRef.current = computeStudentHash(normalizedForActive);
 
-        setTraineeInfo(remoteStudent.traineeInfo);
-        setDetailedLogs(remoteStudent.detailedLogs || []);
-        setFinalSignoff(remoteStudent.finalSignoff);
+        setTraineeInfo(normalizedForActive.traineeInfo);
+        setDetailedLogs(normalizedForActive.detailedLogs);
+        setFinalSignoff(normalizedForActive.finalSignoff);
 
         setTimeout(() => {
           isRemoteUpdateRef.current = false;
@@ -190,7 +242,8 @@ export default function App() {
 
     const unsubCohort = cloudSync.onCohortUpdated((remoteCohort) => {
       if (Array.isArray(remoteCohort) && remoteCohort.length > 0) {
-        setCohortStudents(remoteCohort);
+        const safeCohort = remoteCohort.map((s, idx) => normalizeStudentRecord(s, idx));
+        setCohortStudents(safeCohort);
       }
     });
 
@@ -228,7 +281,232 @@ export default function App() {
     saveStoredCohortStudents(cohortStudents);
   }, [cohortStudents]);
 
-  // Automatically broadcast local changes to the cloud server for other devices (WITH HASH DEDUPLICATION)
+  // Helper: Merge remote Firestore student with local logs safely (never lose local unsaved work)
+  const mergeStudentWithRemote = (
+    local: CohortStudentRecord,
+    remote: CohortStudentRecord
+  ): CohortStudentRecord => {
+    const safeLocal = normalizeStudentRecord(local);
+    const safeRemote = normalizeStudentRecord(remote);
+    const mergedBySession = new Map<number, DetailedActivityLogSheet>();
+
+    for (const l of safeLocal.detailedLogs) {
+      mergedBySession.set(l.sessionNumber, l);
+    }
+    for (const r of safeRemote.detailedLogs) {
+      const existing = mergedBySession.get(r.sessionNumber);
+      if (!existing) {
+        mergedBySession.set(r.sessionNumber, r);
+      } else {
+        // Keep whichever has preceptor signoff, or more written detail/attachments
+        const rSigned = r.status === 'Met' || r.preceptorSignoff?.isSigned;
+        const lSigned = existing.status === 'Met' || existing.preceptorSignoff?.isSigned;
+        if (rSigned && !lSigned) {
+          mergedBySession.set(r.sessionNumber, r);
+        } else if (!lSigned) {
+          const rScore =
+            (r.activityDescription?.length || 0) +
+            (r.reflectiveNotesLessonsLearned?.length || 0) +
+            (r.attachments?.length || 0) * 100;
+          const lScore =
+            (existing.activityDescription?.length || 0) +
+            (existing.reflectiveNotesLessonsLearned?.length || 0) +
+            (existing.attachments?.length || 0) * 100;
+          if (rScore >= lScore) {
+            mergedBySession.set(r.sessionNumber, r);
+          }
+        }
+      }
+    }
+
+    const mergedLogs = Array.from(mergedBySession.values()).sort(
+      (a, b) => a.sessionNumber - b.sessionNumber
+    );
+
+    const mergedSignoff =
+      safeRemote.finalSignoff.isCertified || !safeLocal.finalSignoff.isCertified
+        ? safeRemote.finalSignoff
+        : safeLocal.finalSignoff;
+
+    return normalizeStudentRecord({
+      ...safeLocal,
+      id: safeLocal.id || safeRemote.id,
+      traineeInfo: {
+        ...safeLocal.traineeInfo,
+        ...safeRemote.traineeInfo,
+        studentPin: safeLocal.traineeInfo.studentPin || getStudentPin(safeLocal),
+      },
+      detailedLogs: mergedLogs,
+      finalSignoff: mergedSignoff,
+      updatedAt: safeRemote.updatedAt || safeLocal.updatedAt,
+    });
+  };
+
+  // Helper: Persist a student record to Firestore safely with error reporting
+  const persistStudentToFirestore = async (
+    record: CohortStudentRecord,
+    staffOverride?: boolean
+  ) => {
+    if (!firebaseUser || !firebaseUser.emailVerified) return;
+    const safeId = toFirestoreSafeId(record.id, 'student');
+    if (safeId.startsWith('student-blank-')) return;
+    if (!record.traineeInfo?.traineeName?.trim() && !record.traineeInfo?.traineeId?.trim()) return;
+
+    setFirestoreSaveStatus('saving');
+    setFirestoreErrorMsg(null);
+    try {
+      await saveStudentDossierToFirestore(firebaseUser, record, {
+        isStaff: staffOverride ?? (isRootAdmin || isFirestoreStaff),
+        claimPin: getStudentPin(record),
+      });
+      setFirestoreSaveStatus('saved');
+    } catch (err: any) {
+      const msg = err?.message || 'Failed to save to Firestore.';
+      setFirestoreSaveStatus('error');
+      setFirestoreErrorMsg(msg);
+      console.error('[FirestoreSync] Save failed:', err);
+    }
+  };
+
+  // Permanent Firestore Initialization & Hydration when Google Auth is Ready
+  useEffect(() => {
+    if (!authReady || !firebaseUser || !firebaseUser.emailVerified) {
+      setIsFirestoreStaff(false);
+      return;
+    }
+
+    let cancelled = false;
+
+    const initFirestoreForUser = async () => {
+      try {
+        await ensureUserDocuments(firebaseUser);
+        const staffVerified = await checkIsStaffInFirestore(firebaseUser);
+        if (cancelled) return;
+        setIsFirestoreStaff(staffVerified);
+
+        const currentRoster = cohortStudentsRef.current;
+        const pinLookup: Record<string, string> = {};
+        for (const s of currentRoster) {
+          const pin = getStudentPin(s);
+          pinLookup[s.id] = pin;
+          pinLookup[toFirestoreSafeId(s.id)] = pin;
+          if (s.traineeInfo?.traineeId) pinLookup[s.traineeInfo.traineeId] = pin;
+        }
+
+        if (isRootAdmin) {
+          await seedInitialInstitutionalDataIfAdmin(
+            firebaseUser,
+            currentRoster,
+            getStoredPreceptors()
+          );
+          if (cancelled) return;
+        }
+
+        const remoteStudents = isRootAdmin
+          ? await loadAllCohortStudentsForAdmin(firebaseUser, pinLookup)
+          : await loadOwnedStudentsForUser(firebaseUser, staffVerified, pinLookup);
+
+        if (cancelled) return;
+
+        if (remoteStudents.length > 0) {
+          setCohortStudents((prev) => {
+            const copy = [...prev];
+            for (const remote of remoteStudents) {
+              const idx = copy.findIndex(
+                (s) =>
+                  toFirestoreSafeId(s.id) === remote.id ||
+                  (s.traineeInfo?.traineeId &&
+                    remote.traineeInfo?.traineeId &&
+                    s.traineeInfo.traineeId === remote.traineeInfo.traineeId)
+              );
+              if (idx >= 0) {
+                copy[idx] = mergeStudentWithRemote(copy[idx], remote);
+              } else {
+                copy.unshift(remote);
+              }
+            }
+            return copy;
+          });
+
+          // If current active student matches a restored Firestore record, hydrate active state safely
+          const activeSafeId = toFirestoreSafeId(currentStudentRosterIdRef.current);
+          const matchedRemote = remoteStudents.find(
+            (r) =>
+              r.id === activeSafeId ||
+              (activeTraineeIdRef.current &&
+                r.traineeInfo?.traineeId === activeTraineeIdRef.current)
+          );
+
+          if (matchedRemote) {
+            const merged = mergeStudentWithRemote(
+              {
+                id: currentStudentRosterIdRef.current,
+                traineeInfo,
+                detailedLogs: detailedLogsRef.current,
+                finalSignoff,
+                updatedAt: new Date().toISOString(),
+              },
+              matchedRemote
+            );
+            isRemoteUpdateRef.current = true;
+            lastSyncedHashRef.current = computeStudentHash(merged);
+            lastFirestoreHashRef.current = computeStudentHash(merged);
+            setTraineeInfo(merged.traineeInfo);
+            setDetailedLogs(merged.detailedLogs);
+            setFinalSignoff(merged.finalSignoff);
+            setTimeout(() => {
+              isRemoteUpdateRef.current = false;
+            }, 500);
+          } else if (!isRootAdmin && detailedLogsRef.current.length === 0) {
+            // If non-admin student signed in on a brand-new device with empty local logs, auto-load their owned dossier
+            const firstOwned = remoteStudents[0];
+            if (firstOwned) {
+              isRemoteUpdateRef.current = true;
+              lastSyncedHashRef.current = computeStudentHash(firstOwned);
+              lastFirestoreHashRef.current = computeStudentHash(firstOwned);
+              setCurrentStudentRosterId(firstOwned.id);
+              setTraineeInfo(firstOwned.traineeInfo);
+              setDetailedLogs(firstOwned.detailedLogs);
+              setFinalSignoff(firstOwned.finalSignoff);
+              setStudentUnlocked(firstOwned.traineeInfo.traineeId || firstOwned.id, true);
+              setTimeout(() => {
+                isRemoteUpdateRef.current = false;
+              }, 500);
+            }
+          }
+        }
+
+        // If user already had local unsaved logs on this device before signing in, push them up to Firestore!
+        if (detailedLogsRef.current.length > 0 && !String(currentStudentRosterIdRef.current).startsWith('student-blank-')) {
+          const activeRecord: CohortStudentRecord = {
+            id: currentStudentRosterIdRef.current,
+            traineeInfo,
+            detailedLogs: detailedLogsRef.current,
+            finalSignoff,
+            updatedAt: new Date().toISOString(),
+          };
+          await saveStudentDossierToFirestore(firebaseUser, activeRecord, {
+            isStaff: isRootAdmin || staffVerified,
+            claimPin: getStudentPin(activeRecord),
+          });
+        }
+
+        setFirestoreSaveStatus('saved');
+      } catch (err: any) {
+        if (!cancelled) {
+          setFirestoreSaveStatus('error');
+          setFirestoreErrorMsg(err?.message || 'Cloud database sync error.');
+        }
+      }
+    };
+
+    initFirestoreForUser();
+    return () => {
+      cancelled = true;
+    };
+  }, [authReady, firebaseUser, isRootAdmin]);
+
+  // Automatically broadcast local edits to WebSocket AND persist permanently to Firestore
   useEffect(() => {
     if (isRemoteUpdateRef.current) return;
 
@@ -241,6 +519,24 @@ export default function App() {
     };
 
     const newHash = computeStudentHash(studentRecord);
+
+    // Do NOT broadcast on initial page mount before the user has edited anything
+    if (!hasMountedSyncRef.current) {
+      hasMountedSyncRef.current = true;
+      lastSyncedHashRef.current = newHash;
+      lastFirestoreHashRef.current = newHash;
+      return;
+    }
+
+    // Do NOT broadcast blank/unregistered placeholder slates over enrolled student records
+    if (
+      String(currentStudentRosterId || '').startsWith('student-blank-') ||
+      (!traineeInfo?.traineeId?.trim() && !traineeInfo?.traineeName?.trim())
+    ) {
+      lastSyncedHashRef.current = newHash;
+      return;
+    }
+
     // If data hasn't changed since last sync, DO NOT broadcast!
     if (lastSyncedHashRef.current === newHash) {
       return;
@@ -249,7 +545,26 @@ export default function App() {
     lastSyncedHashRef.current = newHash;
     const isPreceptorRole = userRole === 'preceptor' || userRole === 'lead_educator';
     cloudSync.syncStudent(studentRecord, isPreceptorRole ? 'preceptor' : 'trainee');
-  }, [traineeInfo, detailedLogs, finalSignoff, currentStudentRosterId, userRole]);
+
+    // Also update local cohort list entry so switching between students retains edits
+    setCohortStudents((prev) =>
+      prev.map((s) =>
+        s.id === currentStudentRosterId ||
+        (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)
+          ? { ...s, traineeInfo, detailedLogs, finalSignoff, updatedAt: studentRecord.updatedAt }
+          : s
+      )
+    );
+
+    // Debounced permanent write to Firestore when authenticated
+    if (firebaseUser && firebaseUser.emailVerified && lastFirestoreHashRef.current !== newHash) {
+      lastFirestoreHashRef.current = newHash;
+      if (firestoreDebounceRef.current) clearTimeout(firestoreDebounceRef.current);
+      firestoreDebounceRef.current = setTimeout(() => {
+        persistStudentToFirestore(studentRecord);
+      }, 650);
+    }
+  }, [traineeInfo, detailedLogs, finalSignoff, currentStudentRosterId, userRole, firebaseUser, isRootAdmin, isFirestoreStaff]);
 
   // Security role switching & access control handlers
   const handleRoleSelectChange = (newRole: UserRole) => {
@@ -280,13 +595,21 @@ export default function App() {
     }
   };
 
-  const handleRoleAuthSuccess = (preceptor?: RegisteredPreceptor) => {
+  const handleRoleAuthSuccess = async (preceptor?: RegisteredPreceptor, enteredPin?: string) => {
     setUserRole(targetRoleForAuth);
     setAuthenticatedPreceptor(preceptor || null);
     setIsRoleAuthModalOpen(false);
     if (pendingTabAfterAuth) {
       setActiveTab(pendingTabAfterAuth);
       setPendingTabAfterAuth(null);
+    }
+    if (firebaseUser && firebaseUser.emailVerified && preceptor && enteredPin) {
+      try {
+        await registerStaffMemberInFirestore(firebaseUser, preceptor, enteredPin);
+        setIsFirestoreStaff(true);
+      } catch (err: any) {
+        console.warn('[FirestoreSync] Staff verification note:', err?.message || err);
+      }
     }
   };
 
@@ -300,13 +623,46 @@ export default function App() {
     setActiveTab(tabId);
   };
 
+  // Helper: hydrate selected student from Firestore when staff/admin or owner selects them
+  const hydrateSelectedFromFirestoreIfPossible = async (target: CohortStudentRecord) => {
+    if (!firebaseUser || !firebaseUser.emailVerified) return;
+    if (!(isRootAdmin || isFirestoreStaff)) return;
+    try {
+      const remote = await loadStudentFromFirestore(
+        firebaseUser,
+        target.id,
+        getStudentPin(target)
+      );
+      if (remote) {
+        const merged = mergeStudentWithRemote(target, remote);
+        if (currentStudentRosterIdRef.current === target.id) {
+          isRemoteUpdateRef.current = true;
+          lastSyncedHashRef.current = computeStudentHash(merged);
+          lastFirestoreHashRef.current = computeStudentHash(merged);
+          setTraineeInfo(merged.traineeInfo);
+          setDetailedLogs(merged.detailedLogs);
+          setFinalSignoff(merged.finalSignoff);
+          setTimeout(() => {
+            isRemoteUpdateRef.current = false;
+          }, 400);
+        }
+        setCohortStudents((prev) =>
+          prev.map((s) => (s.id === target.id ? merged : s))
+        );
+      }
+    } catch (err) {
+      console.warn('[FirestoreSync] On-select hydration skipped:', err);
+    }
+  };
+
   // Cohort handlers & Student PIN security
   const handleSelectCohortStudent = (student: CohortStudentRecord, targetTab?: TabType) => {
-    const studentKey = student.traineeInfo.traineeId || student.id;
+    const safeStudent = normalizeStudentRecord(student);
+    const studentKey = safeStudent.traineeInfo.traineeId || safeStudent.id;
 
     // In Trainee mode, enforce 4-digit student PIN if not yet unlocked in this session
     if (userRole === 'trainee' && !isStudentUnlocked(studentKey)) {
-      setStudentToUnlock(student);
+      setStudentToUnlock(safeStudent);
       setPendingStudentTargetTab(targetTab);
       setIsStudentPinModalOpen(true);
       return;
@@ -315,7 +671,7 @@ export default function App() {
     // Save current active student work into cohort list
     setCohortStudents((prev) =>
       prev.map((s) => {
-        if (s.id === currentStudentRosterId || s.traineeInfo.traineeId === traineeInfo.traineeId) {
+        if (s.id === currentStudentRosterId || (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)) {
           return {
             ...s,
             traineeInfo,
@@ -328,26 +684,32 @@ export default function App() {
       })
     );
 
-    // Switch to selected student
-    setTraineeInfo(student.traineeInfo);
-    setDetailedLogs(student.detailedLogs);
-    setFinalSignoff(student.finalSignoff);
-    setCurrentStudentRosterId(student.id);
+    // Switch to selected student without triggering a false "student updated" broadcast
+    lastSyncedHashRef.current = computeStudentHash(safeStudent);
+    lastFirestoreHashRef.current = computeStudentHash(safeStudent);
+    setTraineeInfo(safeStudent.traineeInfo);
+    setDetailedLogs(safeStudent.detailedLogs);
+    setFinalSignoff(safeStudent.finalSignoff);
+    setCurrentStudentRosterId(safeStudent.id);
 
     if (targetTab) {
       setActiveTab(targetTab);
     }
+
+    hydrateSelectedFromFirestoreIfPossible(safeStudent);
   };
 
-  const handleStudentUnlockSuccess = () => {
+  const handleStudentUnlockSuccess = async () => {
     setIsStudentPinModalOpen(false);
     setSessionUnlockCounter((c) => c + 1);
 
     if (studentToUnlock) {
+      const safeTarget = normalizeStudentRecord(studentToUnlock);
+
       // Save current active student work into cohort list
       setCohortStudents((prev) =>
         prev.map((s) => {
-          if (s.id === currentStudentRosterId || s.traineeInfo.traineeId === traineeInfo.traineeId) {
+          if (s.id === currentStudentRosterId || (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)) {
             return {
               ...s,
               traineeInfo,
@@ -360,17 +722,48 @@ export default function App() {
         })
       );
 
-      // Switch to selected student
-      setTraineeInfo(studentToUnlock.traineeInfo);
-      setDetailedLogs(studentToUnlock.detailedLogs);
-      setFinalSignoff(studentToUnlock.finalSignoff);
-      setCurrentStudentRosterId(studentToUnlock.id);
+      // Switch to selected student without triggering a false broadcast
+      lastSyncedHashRef.current = computeStudentHash(safeTarget);
+      lastFirestoreHashRef.current = computeStudentHash(safeTarget);
+      setTraineeInfo(safeTarget.traineeInfo);
+      setDetailedLogs(safeTarget.detailedLogs);
+      setFinalSignoff(safeTarget.finalSignoff);
+      setCurrentStudentRosterId(safeTarget.id);
 
       if (pendingStudentTargetTab) {
         setActiveTab(pendingStudentTargetTab);
       }
       setStudentToUnlock(null);
       setPendingStudentTargetTab(undefined);
+
+      // If signed into Google, claim/hydrate their Firestore record right after unlocking
+      if (firebaseUser && firebaseUser.emailVerified) {
+        try {
+          await saveStudentDossierToFirestore(firebaseUser, safeTarget, {
+            isStaff: isRootAdmin || isFirestoreStaff,
+            claimPin: getStudentPin(safeTarget),
+          });
+          const hydrated = await loadStudentFromFirestore(
+            firebaseUser,
+            safeTarget.id,
+            getStudentPin(safeTarget)
+          );
+          if (hydrated) {
+            const merged = mergeStudentWithRemote(safeTarget, hydrated);
+            isRemoteUpdateRef.current = true;
+            lastSyncedHashRef.current = computeStudentHash(merged);
+            lastFirestoreHashRef.current = computeStudentHash(merged);
+            setTraineeInfo(merged.traineeInfo);
+            setDetailedLogs(merged.detailedLogs);
+            setFinalSignoff(merged.finalSignoff);
+            setTimeout(() => {
+              isRemoteUpdateRef.current = false;
+            }, 400);
+          }
+        } catch (err: any) {
+          console.warn('[FirestoreSync] Student claim/hydrate note:', err?.message || err);
+        }
+      }
     }
   };
 
@@ -421,29 +814,36 @@ export default function App() {
   };
 
   const handleDeleteCohortStudent = (studentId: string) => {
+    if (firebaseUser && isRootAdmin) {
+      deleteStudentFromFirestoreIfAdmin(firebaseUser, studentId).catch((e) =>
+        console.warn('[FirestoreSync] Delete failed:', e)
+      );
+    }
     setCohortStudents((prev) => {
       const updated = prev.filter(
-        (s) => s.id !== studentId && s.traineeInfo.traineeId !== studentId
+        (s) => s.id !== studentId && s.traineeInfo?.traineeId !== studentId
       );
       saveStoredCohortStudents(updated);
       cloudSync.syncCohort(updated);
 
       if (
         currentStudentRosterId === studentId ||
-        traineeInfo.traineeId === studentId
+        traineeInfo?.traineeId === studentId
       ) {
         if (updated.length > 0) {
-          const next = updated[0];
+          const next = normalizeStudentRecord(updated[0]);
+          lastSyncedHashRef.current = computeStudentHash(next);
+          lastFirestoreHashRef.current = computeStudentHash(next);
           setCurrentStudentRosterId(next.id);
           setTraineeInfo(next.traineeInfo);
-          setDetailedLogs(next.detailedLogs || []);
+          setDetailedLogs(next.detailedLogs);
           setFinalSignoff(next.finalSignoff);
         } else {
           const blank = resetStorageToBlank();
+          setCurrentStudentRosterId(`student-blank-${Date.now()}`);
           setTraineeInfo(blank.traineeInfo);
           setDetailedLogs(blank.detailedLogs);
           setFinalSignoff(blank.finalSignoff);
-          setCurrentStudentRosterId('');
         }
       }
 
@@ -667,9 +1067,11 @@ export default function App() {
     setActiveTab('part2');
   };
 
-  // Reset to blank slate for a new real trainee
+  // Reset to blank slate for a new real trainee (isolated from enrolled cohort student ID so it never overwrites a real student)
   const handleResetToBlank = () => {
     const blank = resetStorageToBlank();
+    const blankRosterId = `student-blank-${Date.now()}`;
+    setCurrentStudentRosterId(blankRosterId);
     setTraineeInfo(blank.traineeInfo);
     setDetailedLogs(blank.detailedLogs);
     setFinalSignoff(blank.finalSignoff);
@@ -679,9 +1081,9 @@ export default function App() {
   // Reset to sample demo data
   const handleResetToSample = () => {
     const sample = resetStorageToSample();
-    setTraineeInfo(sample.traineeInfo);
-    setDetailedLogs(sample.detailedLogs);
-    setFinalSignoff(sample.finalSignoff);
+    setTraineeInfo(normalizeTraineeInfo(sample.traineeInfo));
+    setDetailedLogs((sample.detailedLogs || []).map((l, i) => normalizeDetailedLog(l, i)));
+    setFinalSignoff(normalizeFinalSignoff(sample.finalSignoff));
   };
 
   // Export full backup JSON
@@ -698,7 +1100,7 @@ export default function App() {
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `NCEP_LOGBOOK_BACKUP_${traineeInfo.traineeId || 'RECORD'}_${new Date().toISOString().slice(0, 10)}.json`;
+    a.download = `NCEP_LOGBOOK_BACKUP_${traineeInfo?.traineeId || 'RECORD'}_${new Date().toISOString().slice(0, 10)}.json`;
     a.click();
     URL.revokeObjectURL(url);
   };
@@ -711,9 +1113,11 @@ export default function App() {
     reader.onload = (event) => {
       try {
         const parsed = JSON.parse(event.target?.result as string);
-        if (parsed.traineeInfo) setTraineeInfo(parsed.traineeInfo);
-        if (Array.isArray(parsed.detailedLogs)) setDetailedLogs(parsed.detailedLogs);
-        if (parsed.finalSignoff) setFinalSignoff(parsed.finalSignoff);
+        if (parsed.traineeInfo) setTraineeInfo(normalizeTraineeInfo(parsed.traineeInfo));
+        if (Array.isArray(parsed.detailedLogs)) {
+          setDetailedLogs(parsed.detailedLogs.map((l: any, i: number) => normalizeDetailedLog(l, i)));
+        }
+        if (parsed.finalSignoff) setFinalSignoff(normalizeFinalSignoff(parsed.finalSignoff));
       } catch (err) {
         alert('Invalid backup JSON file.');
       }
@@ -722,22 +1126,28 @@ export default function App() {
     e.target.value = '';
   };
 
+  const safeLogs = Array.isArray(detailedLogs) ? detailedLogs : [];
   const metCount = NCEP_SESSIONS_DEFINITIONS.filter((s) => {
-    const log = detailedLogs.find((l) => l.sessionNumber === s.sessionNumber);
+    const log = safeLogs.find((l) => l.sessionNumber === s.sessionNumber);
     return log?.status === 'Met';
   }).length;
 
-  const totalAttachments = detailedLogs.reduce((acc, l) => acc + l.attachments.length, 0);
+  const totalAttachments = safeLogs.reduce((acc, l) => acc + (Array.isArray(l.attachments) ? l.attachments.length : 0), 0);
 
-  const currentStudentRecord: CohortStudentRecord = cohortStudents.find(
-    (s) => s.id === currentStudentRosterId || s.traineeInfo.traineeId === traineeInfo.traineeId
-  ) || {
-    id: currentStudentRosterId,
-    traineeInfo,
-    detailedLogs,
-    finalSignoff,
-    updatedAt: new Date().toISOString(),
-  };
+  const matchedCohortStudent = cohortStudents.find(
+    (s) =>
+      s.id === currentStudentRosterId ||
+      (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)
+  );
+  const currentStudentRecord: CohortStudentRecord = matchedCohortStudent
+    ? normalizeStudentRecord(matchedCohortStudent)
+    : {
+        id: currentStudentRosterId,
+        traineeInfo: normalizeTraineeInfo(traineeInfo),
+        detailedLogs: safeLogs,
+        finalSignoff: normalizeFinalSignoff(finalSignoff),
+        updatedAt: new Date().toISOString(),
+      };
 
   const handleForceSync = () => {
     cloudSync.syncStudent(
@@ -745,6 +1155,9 @@ export default function App() {
       userRole === 'preceptor' || userRole === 'lead_educator' ? 'preceptor' : 'trainee',
       'Manual synchronization requested'
     );
+    if (firebaseUser && firebaseUser.emailVerified) {
+      persistStudentToFirestore(currentStudentRecord);
+    }
   };
 
   return (
@@ -801,7 +1214,7 @@ export default function App() {
                     onChange={(e) => handleRoleSelectChange(e.target.value as UserRole)}
                     className="bg-teal-900 text-teal-100 border border-teal-700/80 rounded px-1.5 py-0.5 text-[11px] cursor-pointer"
                   >
-                    <option value="trainee">Trainee ({traineeInfo.traineeName.split(' ')[0] || 'Student'})</option>
+                    <option value="trainee">Trainee ({(traineeInfo?.traineeName || 'Student').split(' ')[0] || 'Student'})</option>
                     <option value="preceptor">🔒 Clinical Preceptor (PIN)</option>
                     <option value="lead_educator">🔒 Lead Clinical Educator (PIN)</option>
                   </select>
@@ -826,7 +1239,7 @@ export default function App() {
                   </span>
                 </div>
                 <div className="text-[11px] text-slate-500 hidden sm:flex sm:items-center sm:gap-2">
-                  <span>Trainee: {traineeInfo.traineeName} ({traineeInfo.traineeId}) · {traineeInfo.clinicalDepartmentWard}</span>
+                  <span>Trainee: {traineeInfo?.traineeName || 'Not Selected'} ({traineeInfo?.traineeId || '—'}) · {traineeInfo?.clinicalDepartmentWard || 'Ward Unassigned'}</span>
                   {userRole === 'trainee' && (
                     <button
                       type="button"
@@ -834,7 +1247,7 @@ export default function App() {
                       className="inline-flex items-center gap-1 text-[10px] font-bold px-1.5 py-0.5 rounded bg-slate-100 hover:bg-slate-200 border border-slate-200 text-slate-700 cursor-pointer"
                       title="Student PIN Security Status: Click to unlock or verify"
                     >
-                      {isStudentUnlocked(currentStudentRecord.traineeInfo.traineeId || currentStudentRecord.id) ? (
+                      {isStudentUnlocked(currentStudentRecord.traineeInfo?.traineeId || currentStudentRecord.id) ? (
                         <>
                           <Unlock className="w-3 h-3 text-emerald-600" />
                           <span className="text-emerald-700">PIN Verified</span>
@@ -853,6 +1266,42 @@ export default function App() {
 
             {/* Quick Actions */}
             <div className="flex items-center gap-2 font-sans flex-wrap">
+              {/* Permanent Firebase Cloud Database Sign-In / Status */}
+              {firebaseUser ? (
+                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-teal-50 border border-teal-200/90 text-[11px]">
+                  <Database className="w-3.5 h-3.5 text-teal-700" />
+                  <span className="font-semibold text-teal-900 hidden md:inline max-w-[150px] truncate" title={firebaseUser.email || ''}>
+                    {firebaseUser.email}
+                  </span>
+                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                    {firestoreSaveStatus === 'saving'
+                      ? 'Saving...'
+                      : firestoreSaveStatus === 'error'
+                        ? 'DB Error'
+                        : 'Cloud DB'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={signOutGoogle}
+                    title="Sign out of Google Cloud Database"
+                    className="p-0.5 text-slate-500 hover:text-rose-700 transition-colors"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={signInWithGoogle}
+                  disabled={isSigningIn}
+                  title="Sign in with Google to permanently save logbook entries across restarts and updates"
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-teal-800 hover:bg-teal-900 rounded-xl shadow-2xs transition-colors disabled:opacity-60"
+                >
+                  <LogIn className="w-3.5 h-3.5" />
+                  <span>{isSigningIn ? 'Signing in...' : 'Sign in for Cloud DB'}</span>
+                </button>
+              )}
+
               <CloudSyncIndicator
                 currentStudent={currentStudentRecord}
                 onForceSync={handleForceSync}
@@ -930,7 +1379,7 @@ export default function App() {
                 {
                   id: 'part3',
                   label: 'Part III: Final Sign-Off',
-                  badge: finalSignoff.isCertified ? 'Certified' : undefined,
+                  badge: finalSignoff?.isCertified ? 'Certified' : undefined,
                 },
                 {
                   id: 'cohort',
@@ -973,6 +1422,81 @@ export default function App() {
             </nav>
           </div>
         </header>
+
+        {/* Persistent Cloud Database Sign-In / Error Banner */}
+        {(authError || firestoreErrorMsg || (!firebaseUser && authReady && !dismissAuthBanner)) && (
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 pt-4">
+            {(authError || firestoreErrorMsg) ? (
+              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start justify-between gap-3">
+                <div className="flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <div className="font-semibold">
+                      {String(firestoreErrorMsg || authError).includes('Quota exceeded')
+                        ? 'Firestore Daily Free-Tier Quota Exceeded (resets tomorrow).'
+                        : 'Cloud Database Notice'}
+                    </div>
+                    <div className="text-[11px] text-rose-800 break-words">
+                      {String(firestoreErrorMsg || authError).includes(
+                        "Quota exceeded for quota metric 'Free daily read units per project (free tier database)'"
+                      ) ? (
+                        <>
+                          Free daily read quota reached. Upgrade or inspect usage in Firebase Console:{' '}
+                          <a
+                            href="https://console.firebase.google.com/project/gen-lang-client-0393548456/firestore/databases/ai-studio-nurslognursingel-14670a2c-9014-4602-9558-c27099970e61/data?openUpgradeDialog=true"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="underline font-bold"
+                          >
+                            Open Firestore Database
+                          </a>
+                        </>
+                      ) : (
+                        firestoreErrorMsg || authError
+                      )}
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    clearAuthError();
+                    setFirestoreErrorMsg(null);
+                  }}
+                  className="text-[11px] font-semibold text-rose-700 hover:underline shrink-0"
+                >
+                  Dismiss
+                </button>
+              </div>
+            ) : (
+              <div className="p-3 bg-teal-50/90 border border-teal-200 rounded-xl text-xs text-teal-950 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-2">
+                  <Database className="w-4 h-4 text-teal-700 shrink-0" />
+                  <span>
+                    <strong>Permanent Cloud Database Ready:</strong> Sign in with Google once so all clinical logs, reflections, and preceptor signatures are permanently saved across updates and devices.
+                  </span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={signInWithGoogle}
+                    disabled={isSigningIn}
+                    className="px-3 py-1 bg-teal-800 hover:bg-teal-900 text-white rounded-lg text-[11px] font-semibold transition-colors"
+                  >
+                    {isSigningIn ? 'Signing in...' : 'Sign in with Google'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setDismissAuthBanner(true)}
+                    className="px-2 py-1 text-[11px] text-teal-800 hover:underline"
+                  >
+                    Later
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Content Body */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6">
