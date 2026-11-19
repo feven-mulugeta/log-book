@@ -476,10 +476,21 @@ service cloud.firestore {
               && incoming().diff(existing()).affectedKeys().hasOnly([
                 'dateOfActivity', 'durationHours', 'clinicalSettingWard',
                 'activityDescription', 'reflectiveNotesLessonsLearned',
-                'attachmentsCount', 'source', 'updatedAt'
+                'attachmentsCount', 'attachmentIds', 'source', 'updatedAt'
               ])
             ) ||
-            // Verified Preceptor/Mentor evaluates & signs log
+            // Trainee attaches or removes own supporting evidence on an already-Met log (signoff & status immutable)
+            (
+              get(/databases/$(database)/documents/cohortStudents/$(studentId)).data.ownerUid == request.auth.uid
+              && existing().status == 'Met'
+              && incoming().status == existing().status
+              && incoming().preceptorSignoff == existing().preceptorSignoff
+              && incoming().preceptorUid == existing().preceptorUid
+              && incoming().diff(existing()).affectedKeys().hasOnly([
+                'attachmentsCount', 'attachmentIds', 'updatedAt'
+              ])
+            ) ||
+            // Verified Preceptor/Mentor evaluates & signs log (cannot alter student evidence attachmentIds)
             (
               isStaffMember()
               && incoming().diff(existing()).affectedKeys().hasOnly([

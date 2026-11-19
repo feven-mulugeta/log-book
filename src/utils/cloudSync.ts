@@ -1,5 +1,11 @@
 import { CohortStudentRecord, RegisteredPreceptor } from '../types/nursing';
-import { saveStoredPreceptors, saveStoredCohortStudents, normalizeStudentRecord } from './storage';
+import {
+  saveStoredPreceptors,
+  saveStoredCohortStudents,
+  getStoredCohortStudents,
+  mergeDetailedLogArrays,
+  normalizeStudentRecord,
+} from './storage';
 
 export type SyncStatus = 'connected' | 'http_sync' | 'connecting' | 'offline';
 
@@ -309,7 +315,32 @@ class CloudSyncService {
 
   private notifyCohortUpdated(cohort: CohortStudentRecord[]) {
     if (!Array.isArray(cohort) || cohort.length === 0) return;
-    const normalized = cohort.filter((s) => s && typeof s === 'object').map((s, i) => normalizeStudentRecord(s, i));
+    const existingLocal = getStoredCohortStudents();
+    const normalized = cohort
+      .filter((s) => s && typeof s === 'object')
+      .map((s, i) => {
+        const remoteNorm = normalizeStudentRecord(s, i);
+        const localMatch = existingLocal.find(
+          (l) =>
+            l.id === remoteNorm.id ||
+            (l.traineeInfo?.traineeId &&
+              remoteNorm.traineeInfo?.traineeId &&
+              l.traineeInfo.traineeId === remoteNorm.traineeInfo.traineeId)
+        );
+        if (!localMatch) return remoteNorm;
+        return normalizeStudentRecord(
+          {
+            ...remoteNorm,
+            id: localMatch.id || remoteNorm.id,
+            detailedLogs: mergeDetailedLogArrays(localMatch.detailedLogs, remoteNorm.detailedLogs),
+            finalSignoff:
+              remoteNorm.finalSignoff?.isCertified || !localMatch.finalSignoff?.isCertified
+                ? remoteNorm.finalSignoff
+                : localMatch.finalSignoff,
+          },
+          i
+        );
+      });
     if (normalized.length === 0) return;
     saveStoredCohortStudents(normalized);
     this.cohortUpdateListeners.forEach((l) => {
@@ -370,6 +401,43 @@ class CloudSyncService {
     return () => this.notificationListeners.delete(cb);
   }
 
+  private async postStudentSync(
+    student: CohortStudentRecord,
+    source: 'trainee' | 'preceptor',
+    message?: string
+  ): Promise<void> {
+    const payload = {
+      student,
+      source,
+      message,
+      clientId: CLIENT_ID,
+    };
+
+    try {
+      const res = await fetch('/api/sync/student', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return;
+    } catch (err) {
+      console.warn('[CloudSync] HTTP student sync failed, attempting WebSocket fallback:', err);
+    }
+
+    if (this.isWsConnected()) {
+      try {
+        this.ws!.send(
+          JSON.stringify({
+            type: 'SYNC_STUDENT',
+            ...payload,
+          })
+        );
+      } catch (e) {
+        console.error('[CloudSync] WS fallback send error:', e);
+      }
+    }
+  }
+
   // Sync methods (called whenever local changes occur)
   public syncStudent(student: CohortStudentRecord, source: 'trainee' | 'preceptor' = 'trainee', message?: string) {
     const key = `sync_student_${student.id || student.traineeInfo.traineeId}`;
@@ -377,44 +445,38 @@ class CloudSyncService {
       clearTimeout(this.debounceTimers[key]);
     }
 
-    this.debounceTimers[key] = setTimeout(async () => {
-      const payload = {
-        student,
-        source,
-        message,
-        clientId: CLIENT_ID,
-      };
+    this.debounceTimers[key] = setTimeout(() => {
+      delete this.debounceTimers[key];
+      this.postStudentSync(student, source, message);
+    }, 350);
+  }
 
-      // 1. If WebSocket is connected, broadcast via WebSocket
-      if (this.isWsConnected()) {
-        try {
-          this.ws!.send(
-            JSON.stringify({
-              type: 'SYNC_STUDENT',
-              ...payload,
-            })
-          );
-          return;
-        } catch (e) {
-          console.error('[CloudSync] WS send error:', e);
-        }
-      }
-
-      // 2. Fall back to HTTP API if WebSocket is offline or disconnected
-      try {
-        await fetch('/api/sync/student', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-      } catch (err) {
-        console.warn('[CloudSync] Failed to post student update to server:', err);
-      }
-    }, 350); // 350ms debounce
+  public async syncStudentNow(
+    student: CohortStudentRecord,
+    source: 'trainee' | 'preceptor' = 'trainee',
+    message?: string
+  ): Promise<void> {
+    const key = `sync_student_${student.id || student.traineeInfo.traineeId}`;
+    if (this.debounceTimers[key]) {
+      clearTimeout(this.debounceTimers[key]);
+      delete this.debounceTimers[key];
+    }
+    await this.postStudentSync(student, source, message);
   }
 
   public async syncCohort(cohort: CohortStudentRecord[], source: 'trainee' | 'preceptor' = 'preceptor') {
     const payload = { cohortStudents: cohort, source, clientId: CLIENT_ID };
+
+    try {
+      const res = await fetch('/api/sync/cohort', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return;
+    } catch (e) {
+      console.warn('[CloudSync] HTTP cohort sync failed, attempting WS fallback:', e);
+    }
 
     if (this.isWsConnected()) {
       try {
@@ -424,25 +486,25 @@ class CloudSyncService {
             ...payload,
           })
         );
-        return;
       } catch (e) {
         console.error(e);
       }
-    }
-
-    try {
-      await fetch('/api/sync/cohort', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch (e) {
-      console.error(e);
     }
   }
 
   public async syncPreceptors(preceptors: RegisteredPreceptor[]) {
     const payload = { preceptors, clientId: CLIENT_ID };
+
+    try {
+      const res = await fetch('/api/sync/preceptors', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (res.ok) return;
+    } catch (e) {
+      console.warn('[CloudSync] HTTP preceptors sync failed, attempting WS fallback:', e);
+    }
 
     if (this.isWsConnected()) {
       try {
@@ -452,20 +514,9 @@ class CloudSyncService {
             ...payload,
           })
         );
-        return;
       } catch (e) {
         console.error(e);
       }
-    }
-
-    try {
-      await fetch('/api/sync/preceptors', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      });
-    } catch (e) {
-      console.error(e);
     }
   }
 

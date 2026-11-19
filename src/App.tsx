@@ -58,6 +58,7 @@ import {
   normalizeTraineeInfo,
   normalizeDetailedLog,
   normalizeFinalSignoff,
+  mergeDetailedLogArrays,
   UserRole,
 } from './utils/storage';
 import { NCEP_SESSIONS_DEFINITIONS } from './data/ncepData';
@@ -85,6 +86,7 @@ import {
   loadOwnedStudentsForUser,
   loadStudentFromFirestore,
   saveStudentDossierToFirestore,
+  removeAttachmentFromFirestore,
   registerStaffMemberInFirestore,
   deleteStudentFromFirestoreIfAdmin,
   toFirestoreSafeId,
@@ -100,7 +102,11 @@ export default function App() {
   const [cohortStudents, setCohortStudents] = useState<CohortStudentRecord[]>(getStoredCohortStudents);
   const [currentStudentRosterId, setCurrentStudentRosterId] = useState<string>(() => {
     const list = getStoredCohortStudents();
-    return list[0]?.id || 'student-1';
+    const storedInfo = getStoredTraineeInfo();
+    const matched = storedInfo?.traineeId
+      ? list.find((s) => s.traineeInfo?.traineeId === storedInfo.traineeId)
+      : undefined;
+    return matched?.id || list[0]?.id || 'student-1';
   });
   const [activeTab, setActiveTab] = useState<TabType>('part1');
   const [targetSessionForPart2, setTargetSessionForPart2] = useState<number | null>(null);
@@ -150,6 +156,12 @@ export default function App() {
   const detailedLogsRef = useRef(detailedLogs);
   detailedLogsRef.current = detailedLogs;
 
+  const traineeInfoRef = useRef(traineeInfo);
+  traineeInfoRef.current = traineeInfo;
+
+  const finalSignoffRef = useRef(finalSignoff);
+  finalSignoffRef.current = finalSignoff;
+
   // Flag and hash check to avoid echo loops and initial-mount broadcasts
   const isRemoteUpdateRef = useRef(false);
   const hasMountedSyncRef = useRef(false);
@@ -163,7 +175,7 @@ export default function App() {
     const logsSummary = logs
       .map(
         (l) =>
-          `${l.sessionNumber}:${l.status}:${l.dateOfActivity}:${l.activityDescription?.length || 0}:${l.reflectiveNotesLessonsLearned?.length || 0}:${l.attachments?.length || 0}:${l.preceptorSignoff?.isSigned ? '1' : '0'}`
+          `${l.sessionNumber}:${l.status}:${l.dateOfActivity}:${l.activityDescription?.length || 0}:${l.reflectiveNotesLessonsLearned?.length || 0}:${(l.attachments || []).map((a) => a.id).join(',')}:${(l.removedAttachmentIds || []).join(',')}:${l.preceptorSignoff?.isSigned ? '1' : '0'}`
       )
       .join('|');
     const signoffSummary = student?.finalSignoff
@@ -198,7 +210,7 @@ export default function App() {
     const unsubStudent = cloudSync.onStudentUpdated((rawRemoteStudent) => {
       const remoteStudent = normalizeStudentRecord(rawRemoteStudent);
 
-      // 1. Update in cohort list
+      // 1. Update in cohort list non-destructively (preserving submitted attachments)
       setCohortStudents((prev) => {
         const idx = prev.findIndex(
           (s) =>
@@ -209,13 +221,13 @@ export default function App() {
         );
         if (idx >= 0) {
           const copy = [...prev];
-          copy[idx] = { ...remoteStudent, id: copy[idx].id };
+          copy[idx] = mergeStudentWithRemote(copy[idx], remoteStudent);
           return copy;
         }
         return [remoteStudent, ...prev];
       });
 
-      // 2. If it's the currently active student, update active screen state safely!
+      // 2. If it's the currently active student, merge & update active screen state safely!
       const currentActiveId = currentStudentRosterIdRef.current;
       const currentTraineeId = activeTraineeIdRef.current;
 
@@ -225,14 +237,23 @@ export default function App() {
           currentTraineeId &&
           remoteStudent.traineeInfo.traineeId === currentTraineeId)
       ) {
-        // Mark remote update and record hash so auto-broadcast will NOT re-send this back!
-        isRemoteUpdateRef.current = true;
-        const normalizedForActive = { ...remoteStudent, id: currentActiveId || remoteStudent.id };
-        lastSyncedHashRef.current = computeStudentHash(normalizedForActive);
+        const mergedForActive = mergeStudentWithRemote(
+          {
+            id: currentActiveId || remoteStudent.id,
+            traineeInfo: traineeInfoRef.current,
+            detailedLogs: detailedLogsRef.current,
+            finalSignoff: finalSignoffRef.current,
+            updatedAt: new Date().toISOString(),
+          },
+          remoteStudent
+        );
 
-        setTraineeInfo(normalizedForActive.traineeInfo);
-        setDetailedLogs(normalizedForActive.detailedLogs);
-        setFinalSignoff(normalizedForActive.finalSignoff);
+        isRemoteUpdateRef.current = true;
+        lastSyncedHashRef.current = computeStudentHash(mergedForActive);
+
+        setTraineeInfo(mergedForActive.traineeInfo);
+        setDetailedLogs(mergedForActive.detailedLogs);
+        setFinalSignoff(mergedForActive.finalSignoff);
 
         setTimeout(() => {
           isRemoteUpdateRef.current = false;
@@ -242,8 +263,62 @@ export default function App() {
 
     const unsubCohort = cloudSync.onCohortUpdated((remoteCohort) => {
       if (Array.isArray(remoteCohort) && remoteCohort.length > 0) {
-        const safeCohort = remoteCohort.map((s, idx) => normalizeStudentRecord(s, idx));
-        setCohortStudents(safeCohort);
+        const safeRemoteCohort = remoteCohort.map((s, idx) => normalizeStudentRecord(s, idx));
+
+        setCohortStudents((prev) => {
+          const mergedCohort = safeRemoteCohort.map((remoteItem) => {
+            const localMatch = prev.find(
+              (l) =>
+                l.id === remoteItem.id ||
+                (l.traineeInfo?.traineeId &&
+                  remoteItem.traineeInfo?.traineeId &&
+                  l.traineeInfo.traineeId === remoteItem.traineeInfo.traineeId)
+            );
+            return localMatch ? mergeStudentWithRemote(localMatch, remoteItem) : remoteItem;
+          });
+
+          // Sync active student state if the active student is in the updated cohort
+          const activeId = currentStudentRosterIdRef.current;
+          const activeTId = activeTraineeIdRef.current;
+          const matchedActive = mergedCohort.find(
+            (s) =>
+              s.id === activeId ||
+              (activeTId && s.traineeInfo?.traineeId === activeTId)
+          );
+
+          if (matchedActive) {
+            const mergedActive = mergeStudentWithRemote(
+              {
+                id: activeId || matchedActive.id,
+                traineeInfo: traineeInfoRef.current,
+                detailedLogs: detailedLogsRef.current,
+                finalSignoff: finalSignoffRef.current,
+                updatedAt: new Date().toISOString(),
+              },
+              matchedActive
+            );
+            const currentHash = computeStudentHash({
+              id: activeId,
+              traineeInfo: traineeInfoRef.current,
+              detailedLogs: detailedLogsRef.current,
+              finalSignoff: finalSignoffRef.current,
+              updatedAt: '',
+            });
+            const nextHash = computeStudentHash(mergedActive);
+            if (currentHash !== nextHash) {
+              isRemoteUpdateRef.current = true;
+              lastSyncedHashRef.current = nextHash;
+              setTraineeInfo(mergedActive.traineeInfo);
+              setDetailedLogs(mergedActive.detailedLogs);
+              setFinalSignoff(mergedActive.finalSignoff);
+              setTimeout(() => {
+                isRemoteUpdateRef.current = false;
+              }, 500);
+            }
+          }
+
+          return mergedCohort;
+        });
       }
     });
 
@@ -281,47 +356,14 @@ export default function App() {
     saveStoredCohortStudents(cohortStudents);
   }, [cohortStudents]);
 
-  // Helper: Merge remote Firestore student with local logs safely (never lose local unsaved work)
+  // Helper: Merge remote Firestore/server student with local logs safely (never lose attached evidence)
   const mergeStudentWithRemote = (
     local: CohortStudentRecord,
     remote: CohortStudentRecord
   ): CohortStudentRecord => {
     const safeLocal = normalizeStudentRecord(local);
     const safeRemote = normalizeStudentRecord(remote);
-    const mergedBySession = new Map<number, DetailedActivityLogSheet>();
-
-    for (const l of safeLocal.detailedLogs) {
-      mergedBySession.set(l.sessionNumber, l);
-    }
-    for (const r of safeRemote.detailedLogs) {
-      const existing = mergedBySession.get(r.sessionNumber);
-      if (!existing) {
-        mergedBySession.set(r.sessionNumber, r);
-      } else {
-        // Keep whichever has preceptor signoff, or more written detail/attachments
-        const rSigned = r.status === 'Met' || r.preceptorSignoff?.isSigned;
-        const lSigned = existing.status === 'Met' || existing.preceptorSignoff?.isSigned;
-        if (rSigned && !lSigned) {
-          mergedBySession.set(r.sessionNumber, r);
-        } else if (!lSigned) {
-          const rScore =
-            (r.activityDescription?.length || 0) +
-            (r.reflectiveNotesLessonsLearned?.length || 0) +
-            (r.attachments?.length || 0) * 100;
-          const lScore =
-            (existing.activityDescription?.length || 0) +
-            (existing.reflectiveNotesLessonsLearned?.length || 0) +
-            (existing.attachments?.length || 0) * 100;
-          if (rScore >= lScore) {
-            mergedBySession.set(r.sessionNumber, r);
-          }
-        }
-      }
-    }
-
-    const mergedLogs = Array.from(mergedBySession.values()).sort(
-      (a, b) => a.sessionNumber - b.sessionNumber
-    );
+    const mergedLogs = mergeDetailedLogArrays(safeLocal.detailedLogs, safeRemote.detailedLogs);
 
     const mergedSignoff =
       safeRemote.finalSignoff.isCertified || !safeLocal.finalSignoff.isCertified
@@ -603,12 +645,23 @@ export default function App() {
       setActiveTab(pendingTabAfterAuth);
       setPendingTabAfterAuth(null);
     }
-    if (firebaseUser && firebaseUser.emailVerified && preceptor && enteredPin) {
-      try {
-        await registerStaffMemberInFirestore(firebaseUser, preceptor, enteredPin);
-        setIsFirestoreStaff(true);
-      } catch (err: any) {
-        console.warn('[FirestoreSync] Staff verification note:', err?.message || err);
+
+    // Refresh server sync state immediately so mentor/instructor sees all latest submitted evidence
+    cloudSync.fetchInitialState();
+
+    if (firebaseUser && firebaseUser.emailVerified) {
+      let staffElevated = isRootAdmin || isFirestoreStaff;
+      if (preceptor && enteredPin) {
+        try {
+          await registerStaffMemberInFirestore(firebaseUser, preceptor, enteredPin);
+          setIsFirestoreStaff(true);
+          staffElevated = true;
+        } catch (err: any) {
+          console.warn('[FirestoreSync] Staff verification note:', err?.message || err);
+        }
+      }
+      if (staffElevated) {
+        hydrateSelectedFromFirestoreIfPossible(currentStudentRecord, true);
       }
     }
   };
@@ -621,12 +674,21 @@ export default function App() {
       return;
     }
     setActiveTab(tabId);
+    if (tabId === 'part1' || tabId === 'part2' || tabId === 'cohort' || tabId === 'vault') {
+      cloudSync.fetchInitialState();
+      if (isRootAdmin || isFirestoreStaff) {
+        hydrateSelectedFromFirestoreIfPossible(currentStudentRecord);
+      }
+    }
   };
 
   // Helper: hydrate selected student from Firestore when staff/admin or owner selects them
-  const hydrateSelectedFromFirestoreIfPossible = async (target: CohortStudentRecord) => {
+  const hydrateSelectedFromFirestoreIfPossible = async (
+    target: CohortStudentRecord,
+    staffOverride?: boolean
+  ) => {
     if (!firebaseUser || !firebaseUser.emailVerified) return;
-    if (!(isRootAdmin || isFirestoreStaff)) return;
+    if (!(isRootAdmin || isFirestoreStaff || staffOverride)) return;
     try {
       const remote = await loadStudentFromFirestore(
         firebaseUser,
@@ -1034,17 +1096,35 @@ export default function App() {
     });
   };
 
-  // Handler: Save or update detailed log sheet
+  // Handler: Save or update detailed log sheet (flush immediately to server sync & Firestore)
   const handleSaveLogSheet = (newLog: DetailedActivityLogSheet) => {
-    setDetailedLogs((prev) => {
-      const idx = prev.findIndex((l) => l.id === newLog.id || l.sessionNumber === newLog.sessionNumber);
-      if (idx >= 0) {
-        const copy = [...prev];
-        copy[idx] = newLog;
-        return copy;
-      }
-      return [newLog, ...prev];
-    });
+    const prevLogs = detailedLogsRef.current;
+    const idx = prevLogs.findIndex((l) => l.id === newLog.id || l.sessionNumber === newLog.sessionNumber);
+    const updatedLogs =
+      idx >= 0
+        ? prevLogs.map((item, i) => (i === idx ? newLog : item))
+        : [newLog, ...prevLogs];
+
+    setDetailedLogs(updatedLogs);
+
+    if (
+      !String(currentStudentRosterId || '').startsWith('student-blank-') &&
+      (traineeInfo?.traineeId?.trim() || traineeInfo?.traineeName?.trim())
+    ) {
+      const updatedRecord: CohortStudentRecord = {
+        id: currentStudentRosterId,
+        traineeInfo,
+        detailedLogs: updatedLogs,
+        finalSignoff,
+        updatedAt: new Date().toISOString(),
+      };
+      const isStaffRole = userRole === 'preceptor' || userRole === 'lead_educator';
+      cloudSync.syncStudentNow(
+        updatedRecord,
+        isStaffRole ? 'preceptor' : 'trainee',
+        `Saved Session ${newLog.sessionNumber} log sheet for ${traineeInfo.traineeName || 'Trainee'}`
+      );
+    }
   };
 
   // Handler: Import logs from OCR
@@ -1063,11 +1143,93 @@ export default function App() {
     });
   };
 
-  // Handler: Add attachment to log
+  // Handler: Add attachment to log (immediately persisted across server & Firestore)
   const handleAddAttachmentToLog = (logId: string, attachment: EvidenceAttachment) => {
-    setDetailedLogs((prev) =>
-      prev.map((l) => (l.id === logId ? { ...l, attachments: [...l.attachments, attachment] } : l))
+    const prevLogs = detailedLogsRef.current;
+    const updatedLogs = prevLogs.map((l) => {
+      if (l.id !== logId) return l;
+      const nextRemoved = (l.removedAttachmentIds || []).filter((id) => id !== attachment.id);
+      return {
+        ...l,
+        attachments: [...(l.attachments || []), attachment],
+        ...(nextRemoved.length > 0 ? { removedAttachmentIds: nextRemoved } : { removedAttachmentIds: undefined }),
+      };
+    });
+
+    setDetailedLogs(updatedLogs);
+
+    if (
+      !String(currentStudentRosterId || '').startsWith('student-blank-') &&
+      (traineeInfo?.traineeId?.trim() || traineeInfo?.traineeName?.trim())
+    ) {
+      const updatedRecord: CohortStudentRecord = {
+        id: currentStudentRosterId,
+        traineeInfo,
+        detailedLogs: updatedLogs,
+        finalSignoff,
+        updatedAt: new Date().toISOString(),
+      };
+      cloudSync.syncStudentNow(
+        updatedRecord,
+        userRole === 'trainee' ? 'trainee' : 'preceptor',
+        `Attached supporting evidence (${attachment.name}) for ${traineeInfo.traineeName || 'Trainee'}`
+      );
+    }
+  };
+
+  // Handler: Remove attachment from log (STRICTLY restricted to student / trainee only)
+  const handleRemoveAttachmentFromLog = (logId: string, attachmentId: string) => {
+    if (userRole !== 'trainee') return;
+
+    const prevLogs = detailedLogsRef.current;
+    const targetLog = prevLogs.find((l) => l.id === logId);
+    if (!targetLog) return;
+
+    const remainingAttachments = (targetLog.attachments || []).filter((a) => a.id !== attachmentId);
+    const nextRemoved = Array.from(
+      new Set([...(targetLog.removedAttachmentIds || []), attachmentId])
     );
+
+    const updatedLogs = prevLogs.map((l) =>
+      l.id === logId
+        ? {
+            ...l,
+            attachments: remainingAttachments,
+            removedAttachmentIds: nextRemoved,
+          }
+        : l
+    );
+
+    setDetailedLogs(updatedLogs);
+
+    if (
+      !String(currentStudentRosterId || '').startsWith('student-blank-') &&
+      (traineeInfo?.traineeId?.trim() || traineeInfo?.traineeName?.trim())
+    ) {
+      const updatedRecord: CohortStudentRecord = {
+        id: currentStudentRosterId,
+        traineeInfo,
+        detailedLogs: updatedLogs,
+        finalSignoff,
+        updatedAt: new Date().toISOString(),
+      };
+      cloudSync.syncStudentNow(
+        updatedRecord,
+        'trainee',
+        `Student removed evidence attachment from Session ${targetLog.sessionNumber}`
+      );
+      if (firebaseUser && firebaseUser.emailVerified) {
+        removeAttachmentFromFirestore(
+          firebaseUser,
+          updatedRecord.id,
+          targetLog.sessionNumber,
+          attachmentId,
+          remainingAttachments
+        ).catch((err) => {
+          console.warn('[FirestoreSync] Attachment deletion note:', err?.message || err);
+        });
+      }
+    }
   };
 
   // Switch to Part II with specific session
@@ -1509,6 +1671,55 @@ export default function App() {
 
         {/* Content Body */}
         <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-8 py-6">
+          {userRole !== 'trainee' && (
+            <div className="mb-5 bg-teal-950 text-white rounded-2xl px-4 py-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs border border-teal-800/80">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-8 h-8 rounded-xl bg-teal-800 text-teal-100 flex items-center justify-center shrink-0">
+                  <User className="w-4 h-4" />
+                </div>
+                <div className="min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-[10px] uppercase tracking-wider font-bold text-teal-300">
+                      Reviewing Student Dossier
+                    </span>
+                    <span className="text-xs font-bold text-white truncate">
+                      {traineeInfo?.traineeName || 'Unselected'} ({traineeInfo?.traineeId || '—'})
+                    </span>
+                    <span className="text-[11px] text-teal-200">
+                      · {traineeInfo?.clinicalDepartmentWard || 'Ward Unassigned'}
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-teal-300/90 mt-0.5">
+                    {totalAttachments > 0
+                      ? `${totalAttachments} submitted clinical evidence file${totalAttachments === 1 ? '' : 's'} ready for review.`
+                      : 'No evidence attachments uploaded for this student yet.'}
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                {activeTab !== 'vault' && (
+                  <button
+                    type="button"
+                    onClick={() => handleTabClick('vault')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    <Paperclip className="w-3.5 h-3.5" />
+                    <span>View Evidence Vault ({totalAttachments})</span>
+                  </button>
+                )}
+                {activeTab !== 'cohort' && (
+                  <button
+                    type="button"
+                    onClick={() => handleTabClick('cohort')}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-teal-900 hover:bg-teal-800 border border-teal-700 text-teal-100 text-xs font-semibold transition-colors cursor-pointer"
+                  >
+                    <span>All Cohort Students ({cohortStudents.length})</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           {activeTab === 'page1' && (
             <TraineeInfoAndInstructions
               traineeInfo={traineeInfo}
@@ -1548,9 +1759,12 @@ export default function App() {
               logs={detailedLogs}
               onSaveLog={handleSaveLogSheet}
               onAddAttachmentToLog={handleAddAttachmentToLog}
+              onRemoveAttachmentFromLog={handleRemoveAttachmentFromLog}
               activeSessionToOpen={targetSessionForPart2}
               onClearActiveSession={() => setTargetSessionForPart2(null)}
               userRole={userRole}
+              traineeName={traineeInfo?.traineeName}
+              traineeId={traineeInfo?.traineeId}
             />
           )}
 
@@ -1593,6 +1807,10 @@ export default function App() {
             <NcepEvidenceVault
               logs={detailedLogs}
               onOpenAttachmentModalForSession={handleOpenDetailedLogForSession}
+              onRemoveAttachment={handleRemoveAttachmentFromLog}
+              userRole={userRole}
+              studentName={traineeInfo?.traineeName}
+              traineeId={traineeInfo?.traineeId}
             />
           )}
         </main>

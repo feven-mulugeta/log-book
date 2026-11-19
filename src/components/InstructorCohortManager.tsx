@@ -31,6 +31,7 @@ import {
   X,
   Copy,
   ArrowRightLeft,
+  Paperclip,
 } from 'lucide-react';
 import {
   CohortStudentRecord,
@@ -1889,6 +1890,22 @@ export function InstructorCohortManager({
                 </button>
                 <button
                   type="button"
+                  onClick={() => onSelectStudent(currentStudent, 'vault')}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-emerald-950 bg-emerald-100 hover:bg-emerald-200 border border-emerald-300 rounded-xl transition-colors shadow-2xs"
+                  title="Inspect all clinical evidence files submitted by this student"
+                >
+                  <Paperclip className="w-3.5 h-3.5 text-emerald-700" />
+                  <span>
+                    Evidence (
+                    {(currentStudent.detailedLogs || []).reduce(
+                      (acc, l) => acc + (Array.isArray(l?.attachments) ? l.attachments.length : 0),
+                      0
+                    )}
+                    )
+                  </span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => onSelectStudent(currentStudent, 'part3')}
                   className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-purple-950 bg-purple-100 hover:bg-purple-200 border border-purple-300 rounded-xl transition-colors shadow-2xs"
                   title="Open Part III: Final Summative Sign-Off & Institutional Certification"
@@ -1944,6 +1961,11 @@ export function InstructorCohortManager({
                   return log?.status === 'Met';
                 }).length;
 
+                const evidenceCount = (student.detailedLogs || []).reduce(
+                  (acc, l) => acc + (Array.isArray(l?.attachments) ? l.attachments.length : 0),
+                  0
+                );
+
                 const isCurrent =
                   student.traineeInfo?.traineeId === currentStudentId || student.id === currentStudentId;
 
@@ -1955,11 +1977,17 @@ export function InstructorCohortManager({
                     }`}
                   >
                     <td className="py-3 px-3 font-bold text-slate-900">
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         {isCurrent && (
                           <span className="w-2 h-2 rounded-full bg-teal-600 shrink-0" />
                         )}
                         <span>{student.traineeInfo.traineeName || 'Unnamed Trainee'}</span>
+                        {evidenceCount > 0 && (
+                          <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-800 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                            <Paperclip className="w-2.5 h-2.5" />
+                            {evidenceCount}
+                          </span>
+                        )}
                       </div>
                     </td>
 
@@ -2044,6 +2072,19 @@ export function InstructorCohortManager({
                         >
                           <FileEdit className="w-3.5 h-3.5 text-blue-700" />
                           <span>Part II Form</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => onSelectStudent(student, 'vault')}
+                          className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-colors border ${
+                            evidenceCount > 0
+                              ? 'text-emerald-900 bg-emerald-50 hover:bg-emerald-100 border-emerald-300'
+                              : 'text-slate-700 bg-slate-50 hover:bg-slate-100 border-slate-200'
+                          }`}
+                          title="Open Evidence Vault to inspect submitted attachments for this student"
+                        >
+                          <Paperclip className="w-3.5 h-3.5 text-emerald-700" />
+                          <span>Evidence ({evidenceCount})</span>
                         </button>
                         <button
                           type="button"

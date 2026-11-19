@@ -1182,7 +1182,16 @@ function normalizeServerStudent(student: any, idx: number = 0) {
         .filter((l: any) => l && typeof l === 'object')
         .map((l: any) => ({
           ...l,
-          attachments: Array.isArray(l.attachments) ? l.attachments : [],
+          attachments: Array.isArray(l.attachments)
+            ? l.attachments.filter((a: any) => a && typeof a === 'object' && a.id)
+            : [],
+          ...(Array.isArray(l.removedAttachmentIds) && l.removedAttachmentIds.length > 0
+            ? {
+                removedAttachmentIds: Array.from(
+                  new Set(l.removedAttachmentIds.filter((id: any) => typeof id === 'string' && id))
+                ),
+              }
+            : {}),
           activityDescription: typeof l.activityDescription === 'string' ? l.activityDescription : '',
           reflectiveNotesLessonsLearned:
             typeof l.reflectiveNotesLessonsLearned === 'string' ? l.reflectiveNotesLessonsLearned : '',
@@ -2351,6 +2360,88 @@ export function getSyncState() {
   };
 }
 
+function mergeServerAttachments(
+  existingAtts: any[] = [],
+  incomingAtts: any[] = [],
+  removedIds: string[] = []
+): any[] {
+  const removedSet = new Set(removedIds.filter(Boolean));
+  const map = new Map<string, any>();
+  for (const att of [...(existingAtts || []), ...(incomingAtts || [])]) {
+    if (!att || typeof att !== 'object' || !att.id) continue;
+    if (removedSet.has(att.id)) continue;
+    if (!map.has(att.id)) {
+      map.set(att.id, att);
+    }
+  }
+  return Array.from(map.values());
+}
+
+function mergeServerDetailedLogs(existingLogs: any[] = [], incomingLogs: any[] = []): any[] {
+  const bySession = new Map<number, any>();
+
+  for (const rawE of existingLogs || []) {
+    if (!rawE || typeof rawE !== 'object') continue;
+    const sessionNum = Number(rawE.sessionNumber) || 1;
+    bySession.set(sessionNum, rawE);
+  }
+
+  for (const rawI of incomingLogs || []) {
+    if (!rawI || typeof rawI !== 'object') continue;
+    const sessionNum = Number(rawI.sessionNumber) || 1;
+    const existing = bySession.get(sessionNum);
+    if (!existing) {
+      bySession.set(sessionNum, rawI);
+      continue;
+    }
+
+    const combinedRemoved: string[] = Array.from(
+      new Set([
+        ...(Array.isArray(existing.removedAttachmentIds) ? existing.removedAttachmentIds : []),
+        ...(Array.isArray(rawI.removedAttachmentIds) ? rawI.removedAttachmentIds : []),
+      ].filter((id: any) => typeof id === 'string' && id))
+    );
+
+    const mergedAtts = mergeServerAttachments(
+      existing.attachments,
+      rawI.attachments,
+      combinedRemoved
+    );
+
+    const iSigned = rawI.status === 'Met' || Boolean(rawI.preceptorSignoff?.isSigned);
+    const eSigned = existing.status === 'Met' || Boolean(existing.preceptorSignoff?.isSigned);
+
+    let winner = existing;
+    if (iSigned && !eSigned) {
+      winner = rawI;
+    } else if (eSigned && !iSigned) {
+      winner = existing;
+    } else {
+      const iScore =
+        (rawI.activityDescription?.length || 0) +
+        (rawI.reflectiveNotesLessonsLearned?.length || 0) +
+        (rawI.attachments?.length || 0) * 100;
+      const eScore =
+        (existing.activityDescription?.length || 0) +
+        (existing.reflectiveNotesLessonsLearned?.length || 0) +
+        (existing.attachments?.length || 0) * 100;
+      if (iScore >= eScore) {
+        winner = rawI;
+      }
+    }
+
+    bySession.set(sessionNum, {
+      ...winner,
+      attachments: mergedAtts,
+      ...(combinedRemoved.length > 0 ? { removedAttachmentIds: combinedRemoved } : {}),
+    });
+  }
+
+  return Array.from(bySession.values()).sort(
+    (a, b) => (Number(a.sessionNumber) || 0) - (Number(b.sessionNumber) || 0)
+  );
+}
+
 export function updateOrSaveStudent(
   student: any,
   source: 'trainee' | 'preceptor' = 'trainee',
@@ -2377,9 +2468,20 @@ export function updateOrSaveStudent(
       (normalized.traineeInfo?.traineeId && s.traineeInfo?.traineeId === normalized.traineeInfo?.traineeId)
   );
 
+  const existingRecord = existingIdx >= 0 ? inMemoryStore.cohortStudents[existingIdx] : null;
+  const mergedLogs = existingRecord
+    ? mergeServerDetailedLogs(existingRecord.detailedLogs, normalized.detailedLogs)
+    : normalized.detailedLogs;
+  const mergedSignoff =
+    normalized.finalSignoff?.isCertified || !existingRecord?.finalSignoff?.isCertified
+      ? normalized.finalSignoff
+      : existingRecord.finalSignoff;
+
   const updatedRecord = {
     ...normalized,
-    id: existingIdx >= 0 ? inMemoryStore.cohortStudents[existingIdx].id : normalized.id,
+    id: existingRecord ? existingRecord.id : normalized.id,
+    detailedLogs: mergedLogs,
+    finalSignoff: mergedSignoff,
     updatedAt: new Date().toISOString(),
   };
 
@@ -2389,7 +2491,7 @@ export function updateOrSaveStudent(
     inMemoryStore.cohortStudents.unshift(updatedRecord);
   }
 
-  saveStoreToDisk();
+  saveStoreToDisk(true);
 
   const defaultMsg =
     source === 'preceptor'
@@ -2429,6 +2531,7 @@ export function updateCohortRoster(
 ) {
   if (!Array.isArray(cohort)) return inMemoryStore.cohortStudents;
 
+  const existingStudents = inMemoryStore.cohortStudents || [];
   const seenIds = new Set<string>();
   const sanitized = cohort
     .filter((item) => item && typeof item === 'object')
@@ -2438,11 +2541,26 @@ export function updateCohortRoster(
         safeId = `${safeId}-${idx}`;
       }
       seenIds.add(safeId);
-      return normalizeServerStudent({ ...item, id: safeId }, idx);
+      const norm = normalizeServerStudent({ ...item, id: safeId }, idx);
+      const existingMatch = existingStudents.find(
+        (e) =>
+          e.id === norm.id ||
+          (norm.traineeInfo?.traineeId && e.traineeInfo?.traineeId === norm.traineeInfo?.traineeId)
+      );
+      if (!existingMatch) return norm;
+      return {
+        ...norm,
+        id: existingMatch.id || norm.id,
+        detailedLogs: mergeServerDetailedLogs(existingMatch.detailedLogs, norm.detailedLogs),
+        finalSignoff:
+          norm.finalSignoff?.isCertified || !existingMatch.finalSignoff?.isCertified
+            ? norm.finalSignoff
+            : existingMatch.finalSignoff,
+      };
     });
 
   inMemoryStore.cohortStudents = sanitized;
-  saveStoreToDisk();
+  saveStoreToDisk(true);
 
   const event = logSyncEvent(
     'COHORT_SYNCED',

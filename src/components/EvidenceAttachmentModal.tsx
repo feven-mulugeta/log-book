@@ -25,6 +25,50 @@ export function EvidenceAttachmentModal({
 
   if (!isOpen) return null;
 
+  const compressImageDataUrl = (rawDataUrl: string): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => {
+        const tryCompress = (maxDim: number, quality: number): string => {
+          let { width, height } = img;
+          if (width > maxDim || height > maxDim) {
+            const ratio = Math.min(maxDim / width, maxDim / height);
+            width = Math.max(1, Math.round(width * ratio));
+            height = Math.max(1, Math.round(height * ratio));
+          }
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) return rawDataUrl;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(0, 0, width, height);
+          ctx.drawImage(img, 0, 0, width, height);
+          return canvas.toDataURL('image/jpeg', quality);
+        };
+
+        // Progressively optimize so attachment fits Firestore (<=750KB) & cross-device sync
+        const attempts: [number, number][] = [
+          [1600, 0.85],
+          [1400, 0.78],
+          [1200, 0.70],
+          [1000, 0.62],
+          [850, 0.55],
+        ];
+        for (const [dim, q] of attempts) {
+          const out = tryCompress(dim, q);
+          if (out.length <= 520000) {
+            resolve(out);
+            return;
+          }
+        }
+        resolve(tryCompress(720, 0.5));
+      };
+      img.onerror = () => reject(new Error('Unable to process image file.'));
+      img.src = rawDataUrl;
+    });
+  };
+
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
     const file = e.target.files?.[0];
@@ -35,12 +79,30 @@ export function EvidenceAttachmentModal({
       return;
     }
 
-    setFileName(file.name);
-    setFileSize(file.size);
-
     const reader = new FileReader();
-    reader.onload = () => {
-      setFileData(reader.result as string);
+    reader.onload = async () => {
+      try {
+        let resultData = reader.result as string;
+        const isRasterImage =
+          file.type.startsWith('image/') && !file.type.toLowerCase().includes('svg');
+
+        if (isRasterImage && resultData.length > 450000) {
+          resultData = await compressImageDataUrl(resultData);
+        }
+
+        if (resultData.length > 720000) {
+          setError(
+            'This PDF/document exceeds the 500 KB cloud attachment limit. Please upload a photo/screenshot (JPG/PNG) or a smaller compressed PDF.'
+          );
+          return;
+        }
+
+        setFileName(file.name);
+        setFileData(resultData);
+        setFileSize(resultData.length);
+      } catch {
+        setError('Could not optimize selected file. Please try a JPG or PNG image.');
+      }
     };
     reader.onerror = () => {
       setError('Failed to read selected file.');
@@ -77,7 +139,7 @@ export function EvidenceAttachmentModal({
     }
 
     const newAttachment: EvidenceAttachment = {
-      id: `att-${Date.now()}`,
+      id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
       name: fileName || 'Clinical_Evidence_Document',
       type,
       dataUrl: fileData,
@@ -212,15 +274,18 @@ export function EvidenceAttachmentModal({
             <div className="p-3 bg-slate-100 rounded-xl flex items-center justify-between border border-slate-200">
               <div className="flex items-center gap-3 overflow-hidden">
                 <div className="w-12 h-12 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
-                  <img
-                    src={fileData}
-                    alt="Preview"
-                    className="w-full h-full object-cover"
-                    onError={(e) => {
-                      (e.target as HTMLElement).style.display = 'none';
-                    }}
-                  />
-                  <ImageIcon className="w-5 h-5 text-slate-400" />
+                  {fileData.startsWith('data:application/pdf') ? (
+                    <FileText className="w-6 h-6 text-rose-600" />
+                  ) : (
+                    <img
+                      src={fileData}
+                      alt="Preview"
+                      className="w-full h-full object-cover"
+                      onError={(e) => {
+                        (e.target as HTMLElement).style.display = 'none';
+                      }}
+                    />
+                  )}
                 </div>
                 <div className="overflow-hidden">
                   <p className="text-xs font-semibold text-slate-900 truncate">{fileName}</p>

@@ -313,40 +313,49 @@ export async function hydrateStudentFromDocData(
   user: User,
   safeId: string,
   docData: any,
-  localPinHint?: string
+  localPinHint?: string,
+  options?: { skipLogsIfZero?: boolean }
 ): Promise<CohortStudentRecord> {
   const logsPath = `cohortStudents/${safeId}/logs`;
   const isAdmin = isUserRootAdmin(user);
   const isOwner = docData?.ownerUid === user.uid;
   let logDocs: { id: string; data: any }[] = [];
 
-  try {
-    if (isAdmin) {
-      const logsSnap = await getDocs(collection(db, 'cohortStudents', safeId, 'logs'));
-      logDocs = logsSnap.docs.map((d) => ({ id: d.id, data: d.data() }));
-    } else if (isOwner) {
-      const logsSnap = await getDocs(
-        query(
-          collection(db, 'cohortStudents', safeId, 'logs'),
-          where('ownerUid', '==', user.uid)
-        )
-      );
-      logDocs = logsSnap.docs.map((d) => ({ id: d.id, data: d.data() }));
-    } else {
-      // Verified Preceptor/Staff fetches sessions 1..18 via getDoc (uses allow get with isStaffMember)
-      const snaps = await Promise.all(
-        Array.from({ length: 18 }, (_, i) =>
-          getDoc(doc(db, 'cohortStudents', safeId, 'logs', `session-${i + 1}`)).catch(() => null)
-        )
-      );
-      for (const s of snaps) {
-        if (s && s.exists()) {
-          logDocs.push({ id: s.id, data: s.data() });
+  const shouldSkipLogs = Boolean(
+    options?.skipLogsIfZero &&
+      typeof docData?.logsSummaryCount === 'number' &&
+      docData.logsSummaryCount === 0
+  );
+
+  if (!shouldSkipLogs) {
+    try {
+      if (isAdmin) {
+        const logsSnap = await getDocs(collection(db, 'cohortStudents', safeId, 'logs'));
+        logDocs = logsSnap.docs.map((d) => ({ id: d.id, data: d.data() }));
+      } else if (isOwner) {
+        const logsSnap = await getDocs(
+          query(
+            collection(db, 'cohortStudents', safeId, 'logs'),
+            where('ownerUid', '==', user.uid)
+          )
+        );
+        logDocs = logsSnap.docs.map((d) => ({ id: d.id, data: d.data() }));
+      } else {
+        // Verified Preceptor/Staff fetches sessions 1..18 via getDoc (uses allow get with isStaffMember)
+        const snaps = await Promise.all(
+          Array.from({ length: 18 }, (_, i) =>
+            getDoc(doc(db, 'cohortStudents', safeId, 'logs', `session-${i + 1}`)).catch(() => null)
+          )
+        );
+        for (const s of snaps) {
+          if (s && s.exists()) {
+            logDocs.push({ id: s.id, data: s.data() });
+          }
         }
       }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.LIST, logsPath);
     }
-  } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, logsPath);
   }
 
   const logs: DetailedActivityLogSheet[] = await Promise.all(
@@ -446,7 +455,9 @@ export async function loadAllCohortStudentsForAdmin(
         const data = d.data();
         const pinHint =
           localPinLookup?.[d.id] || localPinLookup?.[data.traineeId] || undefined;
-        return hydrateStudentFromDocData(user, d.id, data, pinHint);
+        return hydrateStudentFromDocData(user, d.id, data, pinHint, {
+          skipLogsIfZero: true,
+        });
       })
     );
     return results;
@@ -676,8 +687,11 @@ export async function saveStudentDossierToFirestore(
     const boundedAttachments = (log.attachments || [])
       .filter((a) => a && typeof a.dataUrl === 'string' && a.dataUrl.length <= 750000)
       .slice(0, 10);
-    const attachmentIds = boundedAttachments.map((a) =>
+    const localAttachmentIds = boundedAttachments.map((a) =>
       toFirestoreSafeId(a.id, `att-${Date.now()}`)
+    );
+    const removedSet = new Set(
+      (log.removedAttachmentIds || []).flatMap((id) => [id, toFirestoreSafeId(id, id)])
     );
 
     let existingLog: any = null;
@@ -687,6 +701,15 @@ export async function saveStudentDossierToFirestore(
     } catch (err) {
       handleFirestoreError(err, OperationType.GET, logPath);
     }
+
+    const existingAttachmentIds: string[] = Array.isArray(existingLog?.attachmentIds)
+      ? existingLog.attachmentIds
+      : [];
+    const finalAttachmentIds = Array.from(
+      new Set([...existingAttachmentIds, ...localAttachmentIds])
+    )
+      .filter((id) => !removedSet.has(id))
+      .slice(0, 10);
 
     if (!existingLog) {
       const isSignedByStaff = (isAdmin || options.isStaff) && log.status === 'Met';
@@ -705,8 +728,8 @@ export async function saveStudentDossierToFirestore(
           clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
           activityDescription: boundStr(log.activityDescription, 10000),
           reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
-          attachmentsCount: attachmentIds.length,
-          attachmentIds,
+          attachmentsCount: finalAttachmentIds.length,
+          attachmentIds: finalAttachmentIds,
           preceptorSignoff: serializePreceptorSignoff(
             isSignedByStaff ? log.preceptorSignoff : { isSigned: false }
           ),
@@ -727,8 +750,8 @@ export async function saveStudentDossierToFirestore(
             clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
             activityDescription: boundStr(log.activityDescription, 10000),
             reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
-            attachmentsCount: attachmentIds.length,
-            attachmentIds,
+            attachmentsCount: finalAttachmentIds.length,
+            attachmentIds: finalAttachmentIds,
             preceptorSignoff: serializePreceptorSignoff(log.preceptorSignoff),
             status: log.status === 'Met' ? 'Met' : 'Pending',
             source: log.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
@@ -750,11 +773,22 @@ export async function saveStudentDossierToFirestore(
             clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
             activityDescription: boundStr(log.activityDescription, 10000),
             reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
-            attachmentsCount: attachmentIds.length,
-            attachmentIds,
+            attachmentsCount: finalAttachmentIds.length,
+            attachmentIds: finalAttachmentIds,
             source: log.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
             updatedAt: serverTimestamp(),
           });
+        } else if (existingLog.status === 'Met' && parentOwnerUid === user.uid) {
+          const attChanged =
+            finalAttachmentIds.length !== existingAttachmentIds.length ||
+            finalAttachmentIds.some((id, i) => existingAttachmentIds[i] !== id);
+          if (attChanged) {
+            await updateDoc(logRef, {
+              attachmentsCount: finalAttachmentIds.length,
+              attachmentIds: finalAttachmentIds,
+              updatedAt: serverTimestamp(),
+            });
+          }
         }
       } catch (err) {
         handleFirestoreError(err, OperationType.UPDATE, logPath);
@@ -764,7 +798,8 @@ export async function saveStudentDossierToFirestore(
     // Sync bounded attachments
     for (let idx = 0; idx < boundedAttachments.length; idx++) {
       const att = boundedAttachments[idx];
-      const safeAttId = attachmentIds[idx];
+      const safeAttId = localAttachmentIds[idx];
+      if (removedSet.has(safeAttId)) continue;
       const attPath = `cohortStudents/${safeId}/logs/${safeLogId}/attachments/${safeAttId}`;
       const attRef = doc(db, 'cohortStudents', safeId, 'logs', safeLogId, 'attachments', safeAttId);
       try {
@@ -790,6 +825,60 @@ export async function saveStudentDossierToFirestore(
         handleFirestoreError(err, OperationType.WRITE, attPath);
       }
     }
+
+    // Remove attachment docs explicitly deleted by the student (or admin)
+    if (removedSet.size > 0 && (isAdmin || parentOwnerUid === user.uid)) {
+      for (const remRawId of log.removedAttachmentIds || []) {
+        const safeRemId = toFirestoreSafeId(remRawId, remRawId);
+        if (!safeRemId) continue;
+        const remRef = doc(db, 'cohortStudents', safeId, 'logs', safeLogId, 'attachments', safeRemId);
+        try {
+          await deleteDoc(remRef);
+        } catch {
+          // Ignore if attachment doc never existed in Firestore
+        }
+      }
+    }
+  }
+}
+
+export async function removeAttachmentFromFirestore(
+  user: User,
+  rawStudentId: string,
+  logSessionNumber: number,
+  attachmentId: string,
+  remainingAttachments: EvidenceAttachment[]
+): Promise<void> {
+  if (!user?.uid || !user.emailVerified) return;
+  const safeId = toFirestoreSafeId(rawStudentId, 'student');
+  const safeLogId = `session-${logSessionNumber}`;
+  const safeAttId = toFirestoreSafeId(attachmentId, attachmentId);
+  if (!safeId || !safeAttId) return;
+
+  const logRef = doc(db, 'cohortStudents', safeId, 'logs', safeLogId);
+  const attRef = doc(db, 'cohortStudents', safeId, 'logs', safeLogId, 'attachments', safeAttId);
+  const remainingIds = (remainingAttachments || [])
+    .filter((a) => a && a.id && a.id !== attachmentId && typeof a.dataUrl === 'string' && a.dataUrl.length <= 750000)
+    .slice(0, 10)
+    .map((a) => toFirestoreSafeId(a.id, a.id));
+
+  try {
+    const logSnap = await getDoc(logRef);
+    if (logSnap.exists()) {
+      await updateDoc(logRef, {
+        attachmentsCount: remainingIds.length,
+        attachmentIds: remainingIds,
+        updatedAt: serverTimestamp(),
+      });
+    }
+  } catch (err) {
+    handleFirestoreError(err, OperationType.UPDATE, `cohortStudents/${safeId}/logs/${safeLogId}`);
+  }
+
+  try {
+    await deleteDoc(attRef);
+  } catch (err) {
+    handleFirestoreError(err, OperationType.DELETE, `cohortStudents/${safeId}/logs/${safeLogId}/attachments/${safeAttId}`);
   }
 }
 

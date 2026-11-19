@@ -154,22 +154,54 @@ export function OcrScannerNcep({ onImportOcrLogs, onNavigateToMatrix }: OcrScann
     }
   };
 
-  const handleImport = () => {
+  const compressSoftCopyForSync = (rawDataUrl: string): Promise<string> => {
+    if (!rawDataUrl.startsWith('data:image/') || rawDataUrl.includes('svg') || rawDataUrl.length <= 500000) {
+      return Promise.resolve(rawDataUrl);
+    }
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        let w = img.width;
+        let h = img.height;
+        const maxDim = 1400;
+        if (w > maxDim || h > maxDim) {
+          const r = Math.min(maxDim / w, maxDim / h);
+          w = Math.max(1, Math.round(w * r));
+          h = Math.max(1, Math.round(h * r));
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) return resolve(rawDataUrl);
+        ctx.fillStyle = '#ffffff';
+        ctx.fillRect(0, 0, w, h);
+        ctx.drawImage(img, 0, 0, w, h);
+        const compressed = canvas.toDataURL('image/jpeg', 0.72);
+        resolve(compressed.length <= 650000 ? compressed : canvas.toDataURL('image/jpeg', 0.52));
+      };
+      img.onerror = () => resolve(rawDataUrl);
+      img.src = rawDataUrl;
+    });
+  };
+
+  const handleImport = async () => {
     if (selectedIndices.length === 0) {
       setError('Please select at least one session entry to import.');
       return;
     }
 
     const todayStr = new Date().toISOString().slice(0, 10);
-    const softCopyEvidence: EvidenceAttachment | null = selectedImage
+    const syncedImage = selectedImage ? await compressSoftCopyForSync(selectedImage) : null;
+    const softCopyEvidence: EvidenceAttachment | null = syncedImage
       ? {
           id: `att-ocr-${Date.now()}`,
           name: imageName || 'Scanned_NCEP_Logbook_Page.jpg',
           type: 'scanned_page',
-          dataUrl: selectedImage,
+          dataUrl: syncedImage,
           notes: `Digitized via AI OCR from NCEP soft copy logbook sheet on ${todayStr}.`,
           uploadedAt: new Date().toISOString(),
-          sizeBytes: selectedImage.length,
+          sizeBytes: syncedImage.length,
         }
       : null;
 

@@ -15,6 +15,7 @@ import {
   Download,
   Award,
   Lock,
+  Trash2,
 } from 'lucide-react';
 import {
   DetailedActivityLogSheet,
@@ -34,18 +35,24 @@ interface PartIIDetailedLogSheetsProps {
   logs: DetailedActivityLogSheet[];
   onSaveLog: (log: DetailedActivityLogSheet) => void;
   onAddAttachmentToLog: (logId: string, attachment: EvidenceAttachment) => void;
+  onRemoveAttachmentFromLog?: (logId: string, attachmentId: string) => void;
   activeSessionToOpen?: number | null;
   onClearActiveSession?: () => void;
   userRole: 'trainee' | 'preceptor' | 'lead_educator';
+  traineeName?: string;
+  traineeId?: string;
 }
 
 export function PartIIDetailedLogSheets({
   logs,
   onSaveLog,
   onAddAttachmentToLog,
+  onRemoveAttachmentFromLog,
   activeSessionToOpen,
   onClearActiveSession,
   userRole,
+  traineeName,
+  traineeId,
 }: PartIIDetailedLogSheetsProps) {
   const [selectedSessionFilter, setSelectedSessionFilter] = useState<string>('all');
   const [isEditorOpen, setIsEditorOpen] = useState(false);
@@ -109,6 +116,8 @@ export function PartIIDetailedLogSheets({
 
   // Evidence Attachment Modal state
   const [attachingToLogId, setAttachingToLogId] = useState<string | null>(null);
+  const [isEditorAttachModalOpen, setIsEditorAttachModalOpen] = useState(false);
+  const [confirmDeleteAttKey, setConfirmDeleteAttKey] = useState<string | null>(null);
   const [lightboxAttachment, setLightboxAttachment] = useState<EvidenceAttachment | null>(null);
 
   // Auto-open editor if activeSessionToOpen is passed
@@ -160,6 +169,13 @@ export function PartIIDetailedLogSheets({
 
     const existingLog = editingLogId ? logs.find((l) => l.id === editingLogId) : null;
 
+    const mergedMap = new Map<string, EvidenceAttachment>();
+    for (const att of [...(existingLog?.attachments || []), ...(attachments || [])]) {
+      if (att && att.id && !mergedMap.has(att.id)) {
+        mergedMap.set(att.id, att);
+      }
+    }
+
     const updatedLog: DetailedActivityLogSheet = {
       id: editingLogId || `ncep-log-${Date.now()}`,
       sessionNumber: sessionDef.sessionNumber,
@@ -171,7 +187,8 @@ export function PartIIDetailedLogSheets({
       clinicalSettingWard: clinicalSettingWard.trim() || 'Clinical Ward',
       activityDescription: activityDescription.trim(),
       reflectiveNotesLessonsLearned: reflectiveNotes.trim(),
-      attachments: existingLog ? existingLog.attachments : attachments,
+      attachments: Array.from(mergedMap.values()),
+      ...(existingLog?.removedAttachmentIds ? { removedAttachmentIds: existingLog.removedAttachmentIds } : {}),
       preceptorSignoff: existingLog?.preceptorSignoff,
       status: existingLog?.preceptorSignoff?.isSigned ? 'Met' : 'Pending',
       source: existingLog?.source || 'manual',
@@ -223,7 +240,9 @@ export function PartIIDetailedLogSheets({
             PART II: DETAILED CLINICAL ACTIVITY LOG SHEETS
           </h2>
           <p className="text-xs text-slate-500 mt-0.5 italic">
-            (Make copies of this template for each clinical session or practice assignment performed).
+            {traineeName
+              ? `Portfolio for ${traineeName}${traineeId ? ` (${traineeId})` : ''} · Evidence remains visible to instructors and mentors unless removed by the student.`
+              : '(Make copies of this template for each clinical session or practice assignment performed).'}
           </p>
         </div>
 
@@ -401,29 +420,76 @@ export function PartIIDetailedLogSheets({
 
                     {(log.attachments || []).length > 0 ? (
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        {(log.attachments || []).map((att) => (
-                          <div
-                            key={att.id}
-                            onClick={() => setLightboxAttachment(att)}
-                            className="p-3 bg-white rounded-xl border border-slate-200 hover:border-teal-600 transition-colors cursor-pointer flex items-center gap-3 group"
-                          >
-                            <div className="w-12 h-12 bg-slate-100 rounded-lg overflow-hidden shrink-0 border border-slate-200">
-                              <img
-                                src={att.dataUrl}
-                                alt={att.name}
-                                className="w-full h-full object-cover"
-                              />
+                        {(log.attachments || []).map((att) => {
+                          const isPdf = att.dataUrl?.startsWith('data:application/pdf');
+                          const delKey = `${log.id}::${att.id}`;
+                          return (
+                            <div
+                              key={att.id}
+                              className="p-3 bg-white rounded-xl border border-slate-200 hover:border-teal-600 transition-colors flex items-center gap-3 group"
+                            >
+                              <div
+                                onClick={() => setLightboxAttachment(att)}
+                                className="flex items-center gap-3 flex-1 overflow-hidden cursor-pointer"
+                              >
+                                <div className="w-12 h-12 bg-slate-100 rounded-lg overflow-hidden shrink-0 border border-slate-200 flex items-center justify-center">
+                                  {isPdf ? (
+                                    <FileText className="w-6 h-6 text-rose-600" />
+                                  ) : (
+                                    <img
+                                      src={att.dataUrl}
+                                      alt={att.name}
+                                      className="w-full h-full object-cover"
+                                    />
+                                  )}
+                                </div>
+                                <div className="overflow-hidden flex-1 font-sans">
+                                  <p className="text-xs font-bold text-slate-900 truncate group-hover:text-teal-900">
+                                    {att.name}
+                                  </p>
+                                  <p className="text-[11px] text-slate-500 truncate">
+                                    {att.type.replace('_', ' ')} · Click to inspect
+                                  </p>
+                                </div>
+                              </div>
+
+                              {userRole === 'trainee' && onRemoveAttachmentFromLog && (
+                                <div className="shrink-0 font-sans flex items-center gap-1">
+                                  {confirmDeleteAttKey === delKey ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          onRemoveAttachmentFromLog(log.id, att.id);
+                                          setConfirmDeleteAttKey(null);
+                                        }}
+                                        className="px-2 py-1 text-[10px] font-bold text-white bg-rose-600 hover:bg-rose-700 rounded-lg"
+                                      >
+                                        Confirm
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setConfirmDeleteAttKey(null)}
+                                        className="px-2 py-1 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 rounded-lg"
+                                      >
+                                        Cancel
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => setConfirmDeleteAttKey(delKey)}
+                                      title="Remove attachment (Student only)"
+                                      className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                                    >
+                                      <Trash2 className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
+                                </div>
+                              )}
                             </div>
-                            <div className="overflow-hidden flex-1 font-sans">
-                              <p className="text-xs font-bold text-slate-900 truncate group-hover:text-teal-900">
-                                {att.name}
-                              </p>
-                              <p className="text-[11px] text-slate-500 truncate">
-                                {att.type.replace('_', ' ')} · Click to inspect
-                              </p>
-                            </div>
-                          </div>
-                        ))}
+                          );
+                        })}
                       </div>
                     ) : (
                       <div className="p-3 bg-slate-50 border border-dashed border-slate-200 rounded-xl text-center text-xs font-sans text-slate-500">
@@ -725,6 +791,62 @@ export function PartIIDetailedLogSheets({
                 />
               </div>
 
+              {/* Attach Evidence inside Log Sheet Form */}
+              <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 space-y-2.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="font-bold text-slate-900 flex items-center gap-1.5">
+                    <Paperclip className="w-3.5 h-3.5 text-teal-800" />
+                    <span>Supporting Clinical Evidence ({attachments.length})</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setIsEditorAttachModalOpen(true)}
+                    className="inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold text-teal-800 bg-teal-50 hover:bg-teal-100 border border-teal-200 rounded-lg transition-colors"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Attach Evidence</span>
+                  </button>
+                </div>
+                {attachments.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                    {attachments.map((att) => (
+                      <div
+                        key={att.id}
+                        className="p-2 bg-white rounded-lg border border-slate-200 flex items-center justify-between gap-2"
+                      >
+                        <div className="flex items-center gap-2 overflow-hidden">
+                          {att.dataUrl?.startsWith('data:application/pdf') ? (
+                            <FileText className="w-5 h-5 text-rose-600 shrink-0" />
+                          ) : (
+                            <img
+                              src={att.dataUrl}
+                              alt={att.name}
+                              className="w-8 h-8 rounded object-cover shrink-0 border border-slate-200"
+                            />
+                          )}
+                          <span className="text-[11px] font-semibold text-slate-800 truncate">
+                            {att.name}
+                          </span>
+                        </div>
+                        {userRole === 'trainee' && !editingLogId && (
+                          <button
+                            type="button"
+                            onClick={() => setAttachments((prev) => prev.filter((a) => a.id !== att.id))}
+                            className="text-[11px] text-rose-600 hover:underline shrink-0"
+                          >
+                            Remove
+                          </button>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-[11px] text-slate-500">
+                    Optional: Attach photos, assessment forms, or scans directly before saving.
+                  </p>
+                )}
+              </div>
+
               {/* Form Footer */}
               <div className="flex items-center justify-end gap-2 pt-4 border-t border-slate-200">
                 <button
@@ -920,6 +1042,25 @@ export function PartIIDetailedLogSheets({
         />
       )}
 
+      {/* Evidence Attachment Modal (inside Log Sheet Editor) */}
+      {isEditorAttachModalOpen && (
+        <EvidenceAttachmentModal
+          isOpen={isEditorAttachModalOpen}
+          onClose={() => setIsEditorAttachModalOpen(false)}
+          onSave={(attachment) => {
+            setAttachments((prev) => [...prev, attachment]);
+            if (editingLogId) {
+              onAddAttachmentToLog(editingLogId, attachment);
+            }
+            setIsEditorAttachModalOpen(false);
+          }}
+          entryTitle={`Session ${selectedSessionNumber}: ${
+            NCEP_SESSIONS_DEFINITIONS.find((s) => s.sessionNumber === Number(selectedSessionNumber))
+              ?.sessionTitle || ''
+          }`}
+        />
+      )}
+
       {/* Lightbox Viewer */}
       {lightboxAttachment && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/80 backdrop-blur-xs font-sans">
@@ -935,17 +1076,31 @@ export function PartIIDetailedLogSheets({
               </button>
             </div>
             <div className="p-4 bg-slate-900 flex-1 flex items-center justify-center overflow-auto max-h-[70vh]">
-              <img
-                src={lightboxAttachment.dataUrl}
-                alt={lightboxAttachment.name}
-                className="max-h-[65vh] max-w-full object-contain rounded-lg"
-              />
+              {lightboxAttachment.dataUrl?.startsWith('data:application/pdf') ? (
+                <iframe
+                  src={lightboxAttachment.dataUrl}
+                  title={lightboxAttachment.name}
+                  className="w-full h-[65vh] bg-white rounded-lg"
+                />
+              ) : (
+                <img
+                  src={lightboxAttachment.dataUrl}
+                  alt={lightboxAttachment.name}
+                  className="max-h-[65vh] max-w-full object-contain rounded-lg"
+                />
+              )}
             </div>
-            {lightboxAttachment.notes && (
-              <div className="p-3 bg-slate-50 border-t border-slate-200 text-xs text-slate-700">
-                <strong>Notes:</strong> {lightboxAttachment.notes}
-              </div>
-            )}
+            <div className="p-3 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 text-xs text-slate-700">
+              <span>{lightboxAttachment.notes ? <><strong>Notes:</strong> {lightboxAttachment.notes}</> : 'Evidence verified and de-identified.'}</span>
+              <a
+                href={lightboxAttachment.dataUrl}
+                download={lightboxAttachment.name}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 rounded-lg hover:bg-slate-50 shrink-0"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download</span>
+              </a>
+            </div>
           </div>
         </div>
       )}

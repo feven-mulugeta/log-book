@@ -4,6 +4,7 @@ import {
   FinalCompetencySignoff,
   CohortStudentRecord,
   RegisteredPreceptor,
+  EvidenceAttachment,
 } from '../types/nursing';
 import {
   INITIAL_TRAINEE_INFO,
@@ -72,11 +73,91 @@ export function normalizeDetailedLog(log: any, index: number = 0): DetailedActiv
     attachments: Array.isArray(raw.attachments)
       ? raw.attachments.filter((a: any) => a && typeof a === 'object')
       : [],
+    ...(Array.isArray(raw.removedAttachmentIds) && raw.removedAttachmentIds.length > 0
+      ? {
+          removedAttachmentIds: Array.from(
+            new Set(raw.removedAttachmentIds.filter((id: any) => typeof id === 'string' && id))
+          ),
+        }
+      : {}),
     preceptorSignoff: raw.preceptorSignoff && typeof raw.preceptorSignoff === 'object' ? raw.preceptorSignoff : undefined,
     status: raw.status === 'Met' ? 'Met' : 'Pending',
     source: raw.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
   };
+}
+
+export function mergeAttachments(
+  localAtts: EvidenceAttachment[] = [],
+  remoteAtts: EvidenceAttachment[] = [],
+  removedIds: string[] = []
+): EvidenceAttachment[] {
+  const removedSet = new Set(removedIds.filter(Boolean));
+  const map = new Map<string, EvidenceAttachment>();
+  for (const att of [...(localAtts || []), ...(remoteAtts || [])]) {
+    if (!att || typeof att !== 'object' || !att.id) continue;
+    if (removedSet.has(att.id)) continue;
+    if (!map.has(att.id)) {
+      map.set(att.id, att);
+    }
+  }
+  return Array.from(map.values());
+}
+
+export function mergeDetailedLogArrays(
+  localLogs: DetailedActivityLogSheet[] = [],
+  remoteLogs: DetailedActivityLogSheet[] = []
+): DetailedActivityLogSheet[] {
+  const mergedBySession = new Map<number, DetailedActivityLogSheet>();
+
+  for (const rawL of localLogs || []) {
+    const l = normalizeDetailedLog(rawL);
+    mergedBySession.set(l.sessionNumber, l);
+  }
+
+  for (const rawR of remoteLogs || []) {
+    const r = normalizeDetailedLog(rawR);
+    const existing = mergedBySession.get(r.sessionNumber);
+    if (!existing) {
+      mergedBySession.set(r.sessionNumber, r);
+      continue;
+    }
+
+    const combinedRemoved = Array.from(
+      new Set([...(existing.removedAttachmentIds || []), ...(r.removedAttachmentIds || [])])
+    );
+    const mergedAtts = mergeAttachments(existing.attachments, r.attachments, combinedRemoved);
+
+    const rSigned = r.status === 'Met' || Boolean(r.preceptorSignoff?.isSigned);
+    const lSigned = existing.status === 'Met' || Boolean(existing.preceptorSignoff?.isSigned);
+
+    let winner: DetailedActivityLogSheet = existing;
+    if (rSigned && !lSigned) {
+      winner = r;
+    } else if (lSigned && !rSigned) {
+      winner = existing;
+    } else {
+      const rScore =
+        (r.activityDescription?.length || 0) +
+        (r.reflectiveNotesLessonsLearned?.length || 0) +
+        (r.attachments?.length || 0) * 100;
+      const lScore =
+        (existing.activityDescription?.length || 0) +
+        (existing.reflectiveNotesLessonsLearned?.length || 0) +
+        (existing.attachments?.length || 0) * 100;
+      if (rScore >= lScore) {
+        winner = r;
+      }
+    }
+
+    mergedBySession.set(r.sessionNumber, {
+      ...winner,
+      attachments: mergedAtts,
+      ...(combinedRemoved.length > 0 ? { removedAttachmentIds: combinedRemoved } : {}),
+    });
+  }
+
+  return Array.from(mergedBySession.values()).sort((a, b) => a.sessionNumber - b.sessionNumber);
 }
 
 export function normalizeFinalSignoff(signoff: any): FinalCompetencySignoff {
@@ -318,7 +399,7 @@ export function getStoredDetailedLogs(): DetailedActivityLogSheet[] {
   } catch (e) {
     console.error(e);
   }
-  return INITIAL_DETAILED_LOG_SHEETS.map((l, i) => normalizeDetailedLog(l, i));
+  return [];
 }
 
 export function saveStoredDetailedLogs(logs: DetailedActivityLogSheet[]): void {

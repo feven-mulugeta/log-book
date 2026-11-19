@@ -71,6 +71,8 @@ export interface DetailedActivityLogSheet {
   reflectiveNotesLessonsLearned: string;
   // Evidence attachments site for this session
   attachments: EvidenceAttachment[];
+  // IDs explicitly removed by the student so sync merges never resurrect deleted attachments
+  removedAttachmentIds?: string[];
   // 3. Preceptor / Mentor Feedback & Formative Evaluation
   preceptorSignoff?: PreceptorSignoff;
   status: 'Pending' | 'Met';
