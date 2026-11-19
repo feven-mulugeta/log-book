@@ -1039,6 +1039,26 @@
       },
       "updatedAt": "2026-10-16T08:42:25.141Z",
       "studentPin": "6326"
+    },
+    {
+      "id": "student-roster-NCEP-080-26-1792145000000-0",
+      "traineeInfo": {
+        "traineeName": "Cohort One",
+        "traineeId": "NCEP- 080-26",
+        "assignedClinicalPreceptor": "Sr xx yy",
+        "clinicalDepartmentWard": "Medical",
+        "trainingPeriodFrom": "2026-08-15",
+        "trainingPeriodTo": "2026-11-20",
+        "studentPin": "8026"
+      },
+      "detailedLogs": [],
+      "finalSignoff": {
+        "isCertified": false,
+        "leadEducatorName": "Mr. Yohannes Ayalew",
+        "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+      },
+      "studentPin": "8026",
+      "updatedAt": "2026-11-19T02:39:22.362Z"
     }
   ],
   "preceptors": [
@@ -1194,7 +1214,16 @@
       "wardDepartment": "Medical-Surgical",
       "pin": "4182",
       "initials": "LE"
+    },
+    {
+      "id": "prec-batch-sr-xx-yy-4590",
+      "name": "Sr xx yy",
+      "title": "Mentor",
+      "wardDepartment": "Medical",
+      "pin": "4590",
+      "initials": "SY",
+      "role": "mentor"
     }
   ],
-  "lastUpdated": "2026-11-16T19:03:00.000Z"
+  "lastUpdated": "2026-11-19T02:39:22.362Z"
 }

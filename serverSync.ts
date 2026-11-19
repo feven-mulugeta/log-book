@@ -119,6 +119,15 @@ export const OFFICIAL_INITIAL_PRECEPTORS = [
     "role": "preceptor"
   },
   {
+    "id": "prec-batch-sr-xx-yy-4590",
+    "name": "Sr xx yy",
+    "title": "Mentor",
+    "wardDepartment": "Medical",
+    "pin": "4590",
+    "initials": "SY",
+    "role": "mentor"
+  },
+  {
     "id": "prec-batch-1792140406864-10",
     "name": "Teje Tufa",
     "title": "Clinical Preceptor",
@@ -1121,6 +1130,26 @@ let inMemoryStore: ServerStore = {
             "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
         },
         "updatedAt": "2026-10-16T06:58:21.524Z"
+    },
+    {
+        "id": "student-roster-NCEP-080-26-1792145000000-0",
+        "traineeInfo": {
+            "traineeName": "Cohort One",
+            "traineeId": "NCEP- 080-26",
+            "clinicalDepartmentWard": "Medical",
+            "assignedClinicalPreceptor": "Sr xx yy",
+            "trainingPeriodFrom": "2026-08-15",
+            "trainingPeriodTo": "2026-11-20",
+            "studentPin": "8026"
+        },
+        "detailedLogs": [],
+        "finalSignoff": {
+            "isCertified": false,
+            "leadEducatorName": "Mr. Yohannes Ayalew",
+            "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+        },
+        "studentPin": "8026",
+        "updatedAt": "2026-11-18T18:40:00.000Z"
     }
 ],
     preceptors: OFFICIAL_INITIAL_PRECEPTORS,
@@ -1218,6 +1247,51 @@ function loadStoreFromDisk() {
             preceptorsList.push(yeshiEntry);
             addedOfficial = true;
           }
+        }
+
+        const hasSrXxYy = preceptorsList.some(
+          (p: any) => p?.name?.trim().toLowerCase() === 'sr xx yy' || p?.pin === '4590'
+        );
+        if (!hasSrXxYy) {
+          const srEntry = OFFICIAL_INITIAL_PRECEPTORS.find((p) => p.pin === '4590');
+          if (srEntry) {
+            preceptorsList.push(srEntry);
+            addedOfficial = true;
+          }
+        }
+
+        const hasCohortOne = sanitized.some(
+          (s: any) =>
+            s?.traineeInfo?.traineeId?.replace(/\s+/g, '').toLowerCase() === 'ncep-080-26' ||
+            s?.traineeInfo?.traineeName?.trim().toLowerCase() === 'cohort one'
+        );
+        if (!hasCohortOne) {
+          sanitized.push(
+            normalizeServerStudent(
+              {
+                id: 'student-roster-NCEP-080-26-1792145000000-0',
+                traineeInfo: {
+                  traineeName: 'Cohort One',
+                  traineeId: 'NCEP- 080-26',
+                  clinicalDepartmentWard: 'Medical',
+                  assignedClinicalPreceptor: 'Sr xx yy',
+                  trainingPeriodFrom: '2026-08-15',
+                  trainingPeriodTo: '2026-11-20',
+                  studentPin: '8026',
+                },
+                detailedLogs: [],
+                finalSignoff: {
+                  isCertified: false,
+                  leadEducatorName: 'Mr. Yohannes Ayalew',
+                  leadEducatorTitle: 'Lead Clinical Educator / Program Coordinator',
+                },
+                studentPin: '8026',
+                updatedAt: new Date().toISOString(),
+              },
+              sanitized.length
+            )
+          );
+          addedOfficial = true;
         }
 
         inMemoryStore = {
@@ -2176,6 +2250,26 @@ function loadStoreFromDisk() {
             "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
         },
         "updatedAt": "2026-10-16T06:58:21.524Z"
+    },
+    {
+        "id": "student-roster-NCEP-080-26-1792145000000-0",
+        "traineeInfo": {
+            "traineeName": "Cohort One",
+            "traineeId": "NCEP- 080-26",
+            "clinicalDepartmentWard": "Medical",
+            "assignedClinicalPreceptor": "Sr xx yy",
+            "trainingPeriodFrom": "2026-08-15",
+            "trainingPeriodTo": "2026-11-20",
+            "studentPin": "8026"
+        },
+        "detailedLogs": [],
+        "finalSignoff": {
+            "isCertified": false,
+            "leadEducatorName": "Mr. Yohannes Ayalew",
+            "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+        },
+        "studentPin": "8026",
+        "updatedAt": "2026-11-18T18:40:00.000Z"
     }
 ],
     preceptors: OFFICIAL_INITIAL_PRECEPTORS,

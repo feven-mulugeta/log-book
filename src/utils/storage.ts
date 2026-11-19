@@ -127,24 +127,45 @@ export function getStoredPreceptors(): RegisteredPreceptor[] {
           (p) => p && (p.name?.includes('Abaynesh') || p.name?.includes('Yohannes Ayalew') || p.name?.includes('Aklil'))
         );
         if (hasOfficial) {
+          let currentList = parsed.filter((p) => p && typeof p === 'object' && p.name);
+          let changed = false;
+
           // One-time merge for newly added official mentor Yeshi Berhan (NICU, PIN 3570)
-          const mergedKey = 'ncep_official_mentor_yeshi_3570_merged';
-          if (!localStorage.getItem(mergedKey)) {
-            const exists = parsed.some(
+          const mergedKeyYeshi = 'ncep_official_mentor_yeshi_3570_merged';
+          if (!localStorage.getItem(mergedKeyYeshi)) {
+            const exists = currentList.some(
               (p) => p?.name?.trim().toLowerCase() === 'yeshi berhan' || p?.pin === '3570'
             );
             if (!exists) {
               const yeshi = OFFICIAL_IMPORTED_PRECEPTORS.find((p) => p.name === 'Yeshi Berhan');
               if (yeshi) {
-                const updated = [...parsed, yeshi];
-                safeLocalStorageSet(STORAGE_KEYS.PRECEPTOR_ROSTER, JSON.stringify(updated));
-                safeLocalStorageSet(mergedKey, 'true');
-                return updated;
+                currentList = [...currentList, yeshi];
+                changed = true;
               }
             }
-            safeLocalStorageSet(mergedKey, 'true');
+            safeLocalStorageSet(mergedKeyYeshi, 'true');
           }
-          return parsed.filter((p) => p && typeof p === 'object' && p.name);
+
+          // One-time merge for newly added official mentor Sr xx yy (Medical, PIN 4590)
+          const mergedKeySr = 'ncep_official_mentor_sr_xx_yy_4590_merged';
+          if (!localStorage.getItem(mergedKeySr)) {
+            const exists = currentList.some(
+              (p) => p?.name?.trim().toLowerCase() === 'sr xx yy' || p?.pin === '4590'
+            );
+            if (!exists) {
+              const srMentor = OFFICIAL_IMPORTED_PRECEPTORS.find((p) => p.pin === '4590');
+              if (srMentor) {
+                currentList = [...currentList, srMentor];
+                changed = true;
+              }
+            }
+            safeLocalStorageSet(mergedKeySr, 'true');
+          }
+
+          if (changed) {
+            safeLocalStorageSet(STORAGE_KEYS.PRECEPTOR_ROSTER, JSON.stringify(currentList));
+          }
+          return currentList;
         }
       }
     }
@@ -520,6 +541,26 @@ export function getStoredCohortStudents(): CohortStudentRecord[] {
             const pin = item.studentPin || item.traineeInfo?.studentPin || computeDefaultStudentPin(traineeId, i);
             const normalized = normalizeStudentRecord({ ...item, id: safeId, studentPin: pin }, i);
             sanitized.push(normalized);
+          }
+
+          // One-time merge for newly added official student Cohort One (NCEP- 080-26, Medical, Sr xx yy)
+          const mergedStudentKey = 'ncep_official_student_cohort_one_080_merged';
+          if (!localStorage.getItem(mergedStudentKey)) {
+            const existsCohortOne = sanitized.some(
+              (s) =>
+                s?.traineeInfo?.traineeId?.replace(/\s+/g, '').toLowerCase() === 'ncep-080-26' ||
+                s?.traineeInfo?.traineeName?.trim().toLowerCase() === 'cohort one'
+            );
+            if (!existsCohortOne) {
+              const cohortOneOfficial = OFFICIAL_IMPORTED_STUDENTS.find(
+                (s) => s.id === 'student-roster-NCEP-080-26-1792145000000-0'
+              );
+              if (cohortOneOfficial) {
+                sanitized.push(normalizeStudentRecord(cohortOneOfficial, sanitized.length));
+                safeLocalStorageSet(STORAGE_KEYS.COHORT_STUDENTS, JSON.stringify(sanitized));
+              }
+            }
+            safeLocalStorageSet(mergedStudentKey, 'true');
           }
 
           if (sanitized.length > 0) return sanitized;

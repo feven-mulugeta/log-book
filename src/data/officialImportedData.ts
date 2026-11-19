@@ -1,4 +1,4 @@
-// Official Roster of 17 Preceptors, Mentors & Lead Educator and 52 Students with Individual Student PINs
+// Official Roster of 18 Preceptors, Mentors & Lead Educator and 53 Students with Individual Student PINs
 import { CohortStudentRecord, RegisteredPreceptor } from "../types/nursing";
 
 export const OFFICIAL_IMPORTED_PRECEPTORS: RegisteredPreceptor[] = [
@@ -91,6 +91,15 @@ export const OFFICIAL_IMPORTED_PRECEPTORS: RegisteredPreceptor[] = [
     "pin": "6979",
     "initials": "ML",
     "role": "preceptor"
+  },
+  {
+    "id": "prec-batch-sr-xx-yy-4590",
+    "name": "Sr xx yy",
+    "title": "Mentor",
+    "wardDepartment": "Medical",
+    "pin": "4590",
+    "initials": "SY",
+    "role": "mentor"
   },
   {
     "id": "prec-batch-1792140406864-10",
@@ -1197,5 +1206,25 @@ export const OFFICIAL_IMPORTED_STUDENTS: CohortStudentRecord[] = [
     },
     "updatedAt": "2026-10-16T08:42:25.141Z",
     "studentPin": "6326"
+  },
+  {
+    "id": "student-roster-NCEP-080-26-1792145000000-0",
+    "traineeInfo": {
+      "traineeName": "Cohort One",
+      "traineeId": "NCEP- 080-26",
+      "assignedClinicalPreceptor": "Sr xx yy",
+      "clinicalDepartmentWard": "Medical",
+      "trainingPeriodFrom": "2026-08-15",
+      "trainingPeriodTo": "2026-11-20",
+      "studentPin": "8026"
+    },
+    "detailedLogs": [],
+    "finalSignoff": {
+      "isCertified": false,
+      "leadEducatorName": "Mr. Yohannes Ayalew",
+      "leadEducatorTitle": "Lead Clinical Educator / Program Coordinator"
+    },
+    "updatedAt": "2026-11-18T18:40:00.000Z",
+    "studentPin": "8026"
   }
 ];
