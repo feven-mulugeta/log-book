@@ -1,8 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import {
-  User,
-  Calendar,
-  Building,
   ShieldCheck,
   Check,
   Edit3,
@@ -17,11 +14,10 @@ import {
   KeyRound,
   Lock,
   Unlock,
-  ShieldAlert,
   Printer,
 } from 'lucide-react';
 import { TraineeInformation, CohortStudentRecord } from '../types/nursing';
-import { getStoredPreceptors, UserRole, BLANK_TRAINEE_INFO } from '../utils/storage';
+import { UserRole, BLANK_TRAINEE_INFO } from '../utils/storage';
 
 interface TraineeInfoAndInstructionsProps {
   traineeInfo: TraineeInformation;
@@ -65,23 +61,11 @@ export function TraineeInfoAndInstructions({
   const [confirmBlank, setConfirmBlank] = useState(false);
   const [savedNotice, setSavedNotice] = useState(false);
   const [validationError, setValidationError] = useState<string | null>(null);
-  const registeredPreceptors = getStoredPreceptors();
-  const [isCustomPreceptor, setIsCustomPreceptor] = useState(false);
 
   useEffect(() => {
     // Do not overwrite fields while the student is actively editing
     if (isEditing) return;
     setFormData(traineeInfo);
-    if (
-      traineeInfo?.assignedClinicalPreceptor &&
-      !registeredPreceptors.some(
-        (p) => (p.name || '').trim().toLowerCase() === (traineeInfo.assignedClinicalPreceptor || '').trim().toLowerCase()
-      )
-    ) {
-      setIsCustomPreceptor(true);
-    } else {
-      setIsCustomPreceptor(false);
-    }
   }, [traineeInfo, isEditing]);
 
   const handleEditClick = () => {
@@ -241,7 +225,7 @@ export function TraineeInfoAndInstructions({
                 TRAINEE INFORMATION
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Official clinical registration and assigned preceptor
+                Official clinical trainee identification details
               </p>
             </div>
             <button
@@ -294,152 +278,6 @@ export function TraineeInfoAndInstructions({
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700 font-mono"
                   />
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    • Clinical Department / Ward:
-                  </label>
-                  <input
-                    type="text"
-                    list="trainee-info-wards-list"
-                    value={formData.clinicalDepartmentWard}
-                    onChange={(e) =>
-                      setFormData({ ...formData, clinicalDepartmentWard: e.target.value })
-                    }
-                    placeholder="e.g. Medical ICU"
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700 font-semibold"
-                  />
-                  <datalist id="trainee-info-wards-list">
-                    <option value="NICU" />
-                    <option value="Medical ICU" />
-                    <option value="Surgical Inpatient Ward 4B / Acute Care" />
-                    <option value="Emergency Center & Trauma" />
-                    <option value="Pediatric ICU (PICU)" />
-                    <option value="Coronary Care Unit (CCU)" />
-                    <option value="Resuscitation & Red Zone" />
-                    <option value="Neuro-ICU & Stroke Unit" />
-                    <option value="Renal & Hemodialysis Unit" />
-                    <option value="Burns Critical Care Unit" />
-                    <option value="Trauma & Orthopedic Ward" />
-                    <option value="Main Operating Theatres" />
-                    <option value="Medical High Dependency Unit (HDU)" />
-                    <option value="Emergency Observation Unit" />
-                  </datalist>
-                </div>
-                <div>
-                  <div className="flex items-center justify-between mb-1">
-                    <label className="block text-xs font-bold text-slate-700">
-                      • Assigned Clinical Preceptor / Mentor:
-                    </label>
-                    <button
-                      type="button"
-                      onClick={() => setIsCustomPreceptor(!isCustomPreceptor)}
-                      className="text-[11px] text-teal-700 hover:text-teal-900 font-semibold underline underline-offset-2 transition-colors cursor-pointer"
-                    >
-                      {isCustomPreceptor ? '← Pick from Preceptor List' : '✍️ Type Custom / Visiting Name'}
-                    </button>
-                  </div>
-
-                  {!isCustomPreceptor ? (
-                    <div className="space-y-1">
-                      <select
-                        value={
-                          registeredPreceptors.some(
-                            (p) =>
-                              p.name.trim().toLowerCase() ===
-                              (formData.assignedClinicalPreceptor || '').trim().toLowerCase()
-                          )
-                            ? formData.assignedClinicalPreceptor
-                            : formData.assignedClinicalPreceptor
-                            ? '__custom__'
-                            : ''
-                        }
-                        onChange={(e) => {
-                          const val = e.target.value;
-                          if (val === '__custom__') {
-                            setIsCustomPreceptor(true);
-                          } else if (val === '') {
-                            setFormData({ ...formData, assignedClinicalPreceptor: '' });
-                          } else {
-                            const found = registeredPreceptors.find((p) => p.name === val);
-                            setFormData({
-                              ...formData,
-                              assignedClinicalPreceptor: val,
-                              clinicalDepartmentWard:
-                                formData.clinicalDepartmentWard?.trim()
-                                  ? formData.clinicalDepartmentWard
-                                  : (found?.wardDepartment || ''),
-                            });
-                          }
-                        }}
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-teal-700 font-medium text-slate-800"
-                      >
-                        <option value="">-- Select Assigned Preceptor / Mentor from List --</option>
-                        {registeredPreceptors.map((p) => (
-                          <option key={p.id} value={p.name}>
-                            {p.name} — {p.title} ({p.wardDepartment})
-                          </option>
-                        ))}
-                        <option value="__custom__">✍️ Other / Enter Custom Preceptor Name...</option>
-                      </select>
-                      <p className="text-[10px] text-slate-500 italic">
-                        Selecting from the directory automatically pairs their assigned ward if your ward field is empty.
-                      </p>
-                    </div>
-                  ) : (
-                    <div className="space-y-1.5">
-                      <input
-                        type="text"
-                        placeholder="Type preceptor or mentor name (e.g. Sister Tigist, BSc)"
-                        value={formData.assignedClinicalPreceptor}
-                        onChange={(e) =>
-                          setFormData({ ...formData, assignedClinicalPreceptor: e.target.value })
-                        }
-                        className="w-full px-3 py-2 text-xs rounded-xl border border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-700 bg-teal-50/20 font-medium"
-                      />
-                      <div className="flex items-center justify-between text-[11px] text-slate-500">
-                        <span>Custom preceptor name active</span>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsCustomPreceptor(false);
-                            if (
-                              !registeredPreceptors.some((p) => p.name === formData.assignedClinicalPreceptor)
-                            ) {
-                              setFormData({ ...formData, assignedClinicalPreceptor: '' });
-                            }
-                          }}
-                          className="text-teal-700 font-semibold hover:underline"
-                        >
-                          Reset to dropdown list
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    • Training Period: From
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.trainingPeriodFrom}
-                    onChange={(e) =>
-                      setFormData({ ...formData, trainingPeriodFrom: e.target.value })
-                    }
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    • Training Period: To
-                  </label>
-                  <input
-                    type="date"
-                    value={formData.trainingPeriodTo}
-                    onChange={(e) => setFormData({ ...formData, trainingPeriodTo: e.target.value })}
-                    className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"
-                  />
-                </div>
               </div>
               <div className="flex justify-end pt-2">
                 <button
@@ -468,46 +306,6 @@ export function TraineeInfoAndInstructions({
                 </span>
                 <p className="text-sm font-mono font-bold text-teal-900">
                   {traineeInfo.traineeId || '_________________________________'}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-slate-500">
-                  • Clinical Department / Ward:
-                </span>
-                <p className="text-xs font-sans text-slate-800">
-                  {traineeInfo.clinicalDepartmentWard ? (
-                    <strong className="text-slate-900 font-semibold">{traineeInfo.clinicalDepartmentWard}</strong>
-                  ) : (
-                    <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-400 italic text-[11px] border border-dashed border-slate-300">
-                      [Blank — click &ldquo;Edit Information&rdquo; to enter ward]
-                    </span>
-                  )}
-                </p>
-              </div>
-
-              <div className="space-y-1">
-                <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-slate-500">
-                  • Assigned Clinical Preceptor / Mentor:
-                </span>
-                <p className="text-xs font-sans text-slate-800">
-                  {traineeInfo.assignedClinicalPreceptor ? (
-                    <strong className="text-slate-900 font-semibold">{traineeInfo.assignedClinicalPreceptor}</strong>
-                  ) : (
-                    <span className="inline-block px-2 py-0.5 rounded bg-slate-100 text-slate-400 italic text-[11px] border border-dashed border-slate-300">
-                      [Blank — click &ldquo;Edit Information&rdquo; to assign preceptor / mentor]
-                    </span>
-                  )}
-                </p>
-              </div>
-
-              <div className="sm:col-span-2 space-y-1 pt-1 border-t border-slate-200/80">
-                <span className="text-[11px] font-sans font-bold uppercase tracking-wider text-slate-500">
-                  • Training Period:
-                </span>
-                <p className="text-xs font-sans text-slate-800">
-                  From <strong className="text-slate-900">{traineeInfo.trainingPeriodFrom || '_________'}</strong> To{' '}
-                  <strong className="text-slate-900">{traineeInfo.trainingPeriodTo || '_________'}</strong>
                 </p>
               </div>
             </div>
