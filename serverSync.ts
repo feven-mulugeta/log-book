@@ -2442,6 +2442,32 @@ function mergeServerDetailedLogs(existingLogs: any[] = [], incomingLogs: any[] =
   );
 }
 
+function mergeServerTraineeInfo(existingInfo: any = {}, incomingInfo: any = {}, preferExistingOnEmpty = true): any {
+  const fields = [
+    'traineeName',
+    'traineeId',
+    'clinicalDepartmentWard',
+    'assignedClinicalPreceptor',
+    'trainingPeriodFrom',
+    'trainingPeriodTo',
+    'studentPin',
+  ];
+  const merged: Record<string, any> = {
+    ...(existingInfo || {}),
+    ...(incomingInfo || {}),
+  };
+  for (const key of fields) {
+    const eVal = typeof existingInfo?.[key] === 'string' ? existingInfo[key].trim() : '';
+    const iVal = typeof incomingInfo?.[key] === 'string' ? incomingInfo[key].trim() : '';
+    if (iVal) {
+      merged[key] = incomingInfo[key];
+    } else if (preferExistingOnEmpty && eVal) {
+      merged[key] = existingInfo[key];
+    }
+  }
+  return merged;
+}
+
 export function updateOrSaveStudent(
   student: any,
   source: 'trainee' | 'preceptor' = 'trainee',
@@ -2476,10 +2502,15 @@ export function updateOrSaveStudent(
     normalized.finalSignoff?.isCertified || !existingRecord?.finalSignoff?.isCertified
       ? normalized.finalSignoff
       : existingRecord.finalSignoff;
+  const mergedTraineeInfo = existingRecord
+    ? mergeServerTraineeInfo(existingRecord.traineeInfo, normalized.traineeInfo, true)
+    : normalized.traineeInfo;
 
   const updatedRecord = {
     ...normalized,
     id: existingRecord ? existingRecord.id : normalized.id,
+    traineeInfo: mergedTraineeInfo,
+    studentPin: mergedTraineeInfo.studentPin || existingRecord?.studentPin || normalized.studentPin,
     detailedLogs: mergedLogs,
     finalSignoff: mergedSignoff,
     updatedAt: new Date().toISOString(),
@@ -2548,9 +2579,12 @@ export function updateCohortRoster(
           (norm.traineeInfo?.traineeId && e.traineeInfo?.traineeId === norm.traineeInfo?.traineeId)
       );
       if (!existingMatch) return norm;
+      const mergedTraineeInfo = mergeServerTraineeInfo(existingMatch.traineeInfo, norm.traineeInfo, true);
       return {
         ...norm,
         id: existingMatch.id || norm.id,
+        traineeInfo: mergedTraineeInfo,
+        studentPin: mergedTraineeInfo.studentPin || existingMatch.studentPin || norm.studentPin,
         detailedLogs: mergeServerDetailedLogs(existingMatch.detailedLogs, norm.detailedLogs),
         finalSignoff:
           norm.finalSignoff?.isCertified || !existingMatch.finalSignoff?.isCertified

@@ -10,6 +10,8 @@ import {
   Camera,
   RotateCw,
   Plus,
+  Loader2,
+  Shrink,
 } from 'lucide-react';
 import {
   DetailedActivityLogSheet,
@@ -18,6 +20,11 @@ import {
   OcrNcepExtractionResult,
 } from '../types/nursing';
 import { NCEP_SAMPLE_OCR_SCANS, NCEP_SESSIONS_DEFINITIONS } from '../data/ncepData';
+import {
+  processAttachmentFile,
+  formatFileWeight,
+  estimateDataUrlBytes,
+} from '../utils/fileCompression';
 
 interface OcrScannerNcepProps {
   onImportOcrLogs: (newLogs: DetailedActivityLogSheet[]) => void;
@@ -27,6 +34,13 @@ interface OcrScannerNcepProps {
 export function OcrScannerNcep({ onImportOcrLogs, onNavigateToMatrix }: OcrScannerNcepProps) {
   const [selectedImage, setSelectedImage] = useState<string | null>(null);
   const [imageName, setImageName] = useState<string>('');
+  const [isOptimizing, setIsOptimizing] = useState(false);
+  const [weightInfo, setWeightInfo] = useState<{
+    originalBytes: number;
+    finalBytes: number;
+    wasCompressed: boolean;
+    savedPercent: number;
+  } | null>(null);
   const [isProcessing, setIsProcessing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [ocrResult, setOcrResult] = useState<OcrNcepExtractionResult | null>(null);
@@ -34,23 +48,38 @@ export function OcrScannerNcep({ onImportOcrLogs, onNavigateToMatrix }: OcrScann
   const [selectedIndices, setSelectedIndices] = useState<number[]>([]);
   const [importSuccessCount, setImportSuccessCount] = useState<number | null>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setError(null);
     setOcrResult(null);
     setImportSuccessCount(null);
-    setImageName(file.name);
+    setIsOptimizing(true);
 
-    const reader = new FileReader();
-    reader.onload = () => {
-      setSelectedImage(reader.result as string);
-    };
-    reader.onerror = () => {
-      setError('Failed to read the selected file.');
-    };
-    reader.readAsDataURL(file);
+    try {
+      const processed = await processAttachmentFile(file, {
+        maxRawMb: 15,
+        targetMaxChars: 500000,
+        hardMaxChars: 720000,
+      });
+      setImageName(processed.fileName);
+      setSelectedImage(processed.dataUrl);
+      setWeightInfo({
+        originalBytes: processed.originalBytes,
+        finalBytes: processed.finalBytes,
+        wasCompressed: processed.wasCompressed,
+        savedPercent: processed.savedPercent,
+      });
+    } catch (err: any) {
+      setSelectedImage(null);
+      setImageName('');
+      setWeightInfo(null);
+      setError(err?.message || 'Failed to read or compress the selected file.');
+    } finally {
+      setIsOptimizing(false);
+      e.target.value = '';
+    }
   };
 
   const handleSelectPreset = (presetId: string) => {
@@ -61,6 +90,13 @@ export function OcrScannerNcep({ onImportOcrLogs, onNavigateToMatrix }: OcrScann
     setImportSuccessCount(null);
     setSelectedImage(preset.thumbnail);
     setImageName(preset.title);
+    const bytes = estimateDataUrlBytes(preset.thumbnail);
+    setWeightInfo({
+      originalBytes: bytes,
+      finalBytes: bytes,
+      wasCompressed: false,
+      savedPercent: 0,
+    });
   };
 
   const handleScanNow = async () => {
@@ -201,7 +237,7 @@ export function OcrScannerNcep({ onImportOcrLogs, onNavigateToMatrix }: OcrScann
           dataUrl: syncedImage,
           notes: `Digitized via AI OCR from NCEP soft copy logbook sheet on ${todayStr}.`,
           uploadedAt: new Date().toISOString(),
-          sizeBytes: syncedImage.length,
+          sizeBytes: estimateDataUrlBytes(syncedImage),
         }
       : null;
 
@@ -280,15 +316,28 @@ export function OcrScannerNcep({ onImportOcrLogs, onNavigateToMatrix }: OcrScann
                 className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
               />
               <div className="flex flex-col items-center pointer-events-none">
-                <div className="p-3 bg-teal-50 rounded-full text-teal-700 mb-2">
-                  <Camera className="w-6 h-6" />
-                </div>
-                <p className="text-xs font-semibold text-slate-900">
-                  Drop soft copy scan or take a ward photo
-                </p>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Supports Part I Matrix sheets and Part II Activity templates
-                </p>
+                {isOptimizing ? (
+                  <>
+                    <div className="p-3 bg-teal-50 rounded-full text-teal-700 mb-2">
+                      <Loader2 className="w-6 h-6 animate-spin" />
+                    </div>
+                    <p className="text-xs font-semibold text-teal-900">
+                      Detecting file weight &amp; compressing scan...
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <div className="p-3 bg-teal-50 rounded-full text-teal-700 mb-2">
+                      <Camera className="w-6 h-6" />
+                    </div>
+                    <p className="text-xs font-semibold text-slate-900">
+                      Drop soft copy scan or take a ward photo
+                    </p>
+                    <p className="text-[11px] text-slate-500 mt-1">
+                      Supports Part I Matrix &amp; Part II sheets · Auto-compressed for cloud sync
+                    </p>
+                  </>
+                )}
               </div>
             </div>
 
@@ -324,16 +373,35 @@ export function OcrScannerNcep({ onImportOcrLogs, onNavigateToMatrix }: OcrScann
             {/* Preview & Action */}
             {selectedImage && (
               <div className="space-y-3 pt-3 border-t border-slate-200">
-                <div className="flex items-center justify-between text-xs">
-                  <span className="font-semibold text-slate-700 truncate">{imageName}</span>
+                <div className="flex items-start justify-between gap-2 text-xs">
+                  <div className="min-w-0">
+                    <p className="font-semibold text-slate-700 truncate">{imageName}</p>
+                    {weightInfo && (
+                      <div className="flex items-center gap-1.5 flex-wrap mt-1 text-[11px]">
+                        {weightInfo.wasCompressed ? (
+                          <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-800 border border-emerald-200 font-medium">
+                            <Shrink className="w-3 h-3 text-emerald-700" />
+                            <span>
+                              {formatFileWeight(weightInfo.originalBytes)} → {formatFileWeight(weightInfo.finalBytes)} ({weightInfo.savedPercent}% smaller)
+                            </span>
+                          </span>
+                        ) : (
+                          <span className="text-slate-500 font-medium">
+                            Weight: {formatFileWeight(weightInfo.finalBytes)} · Cloud Ready
+                          </span>
+                        )}
+                      </div>
+                    )}
+                  </div>
                   <button
                     type="button"
                     onClick={() => {
                       setSelectedImage(null);
                       setImageName('');
+                      setWeightInfo(null);
                       setOcrResult(null);
                     }}
-                    className="text-rose-600 hover:text-rose-800"
+                    className="text-rose-600 hover:text-rose-800 shrink-0"
                   >
                     Clear
                   </button>

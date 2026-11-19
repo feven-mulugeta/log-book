@@ -63,10 +63,14 @@ export function TraineeInfoAndInstructions({
   const [isEditing, setIsEditing] = useState(false);
   const [formData, setFormData] = useState<TraineeInformation>(traineeInfo);
   const [confirmBlank, setConfirmBlank] = useState(false);
+  const [savedNotice, setSavedNotice] = useState(false);
+  const [validationError, setValidationError] = useState<string | null>(null);
   const registeredPreceptors = getStoredPreceptors();
   const [isCustomPreceptor, setIsCustomPreceptor] = useState(false);
 
   useEffect(() => {
+    // Do not overwrite fields while the student is actively editing
+    if (isEditing) return;
     setFormData(traineeInfo);
     if (
       traineeInfo?.assignedClinicalPreceptor &&
@@ -78,20 +82,40 @@ export function TraineeInfoAndInstructions({
     } else {
       setIsCustomPreceptor(false);
     }
-  }, [traineeInfo]);
+  }, [traineeInfo, isEditing]);
 
   const handleEditClick = () => {
     if (userRole === 'trainee' && !isCurrentStudentUnlocked && onOpenUnlockModal) {
       onOpenUnlockModal();
       return;
     }
+    setValidationError(null);
+    if (!isEditing) {
+      setFormData(traineeInfo);
+    }
     setIsEditing(!isEditing);
   };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
-    onUpdateTraineeInfo(formData);
+    const cleaned: TraineeInformation = {
+      ...formData,
+      traineeName: (formData.traineeName || '').trim(),
+      traineeId: (formData.traineeId || '').trim(),
+      clinicalDepartmentWard: (formData.clinicalDepartmentWard || '').trim(),
+      assignedClinicalPreceptor: (formData.assignedClinicalPreceptor || '').trim(),
+      trainingPeriodFrom: (formData.trainingPeriodFrom || '').trim(),
+      trainingPeriodTo: (formData.trainingPeriodTo || '').trim(),
+    };
+    if (!cleaned.traineeName && !cleaned.traineeId) {
+      setValidationError('Please enter at least a Trainee Name or Trainee ID before saving.');
+      return;
+    }
+    setValidationError(null);
+    onUpdateTraineeInfo(cleaned);
     setIsEditing(false);
+    setSavedNotice(true);
+    setTimeout(() => setSavedNotice(false), 4500);
   };
 
   return (
@@ -230,8 +254,22 @@ export function TraineeInfoAndInstructions({
             </button>
           </div>
 
+          {savedNotice && (
+            <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-900 flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>
+                <strong>Trainee details saved:</strong> Your profile has been retained and synchronized.
+              </span>
+            </div>
+          )}
+
           {isEditing ? (
             <form onSubmit={handleSave} className="space-y-4">
+              {validationError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800">
+                  {validationError}
+                </div>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -251,7 +289,6 @@ export function TraineeInfoAndInstructions({
                   </label>
                   <input
                     type="text"
-                    required
                     value={formData.traineeId}
                     onChange={(e) => setFormData({ ...formData, traineeId: e.target.value })}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300 focus:outline-none focus:ring-2 focus:ring-teal-700 font-mono"
@@ -263,7 +300,6 @@ export function TraineeInfoAndInstructions({
                   </label>
                   <input
                     type="text"
-                    required
                     list="trainee-info-wards-list"
                     value={formData.clinicalDepartmentWard}
                     onChange={(e) =>
@@ -353,7 +389,6 @@ export function TraineeInfoAndInstructions({
                     <div className="space-y-1.5">
                       <input
                         type="text"
-                        required
                         placeholder="Type preceptor or mentor name (e.g. Sister Tigist, BSc)"
                         value={formData.assignedClinicalPreceptor}
                         onChange={(e) =>
@@ -387,7 +422,6 @@ export function TraineeInfoAndInstructions({
                   </label>
                   <input
                     type="date"
-                    required
                     value={formData.trainingPeriodFrom}
                     onChange={(e) =>
                       setFormData({ ...formData, trainingPeriodFrom: e.target.value })
@@ -401,7 +435,6 @@ export function TraineeInfoAndInstructions({
                   </label>
                   <input
                     type="date"
-                    required
                     value={formData.trainingPeriodTo}
                     onChange={(e) => setFormData({ ...formData, trainingPeriodTo: e.target.value })}
                     className="w-full px-3 py-2 text-xs rounded-xl border border-slate-300"

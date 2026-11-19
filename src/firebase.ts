@@ -1,10 +1,30 @@
 import { initializeApp } from 'firebase/app';
 import { getAuth, GoogleAuthProvider } from 'firebase/auth';
-import { getFirestore, doc, getDocFromServer } from 'firebase/firestore';
+import {
+  getFirestore,
+  initializeFirestore,
+  doc,
+  getDocFromServer,
+  Firestore,
+} from 'firebase/firestore';
 import firebaseConfig from '../firebase-applet-config.json';
 
 const app = initializeApp(firebaseConfig);
-export const db = getFirestore(app, firebaseConfig.firestoreDatabaseId);
+
+export const db: Firestore = (() => {
+  try {
+    return initializeFirestore(
+      app,
+      {
+        experimentalAutoDetectLongPolling: true,
+      },
+      firebaseConfig.firestoreDatabaseId
+    );
+  } catch {
+    return getFirestore(app, firebaseConfig.firestoreDatabaseId);
+  }
+})();
+
 export const auth = getAuth(app);
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
@@ -33,6 +53,26 @@ export interface FirestoreErrorInfo {
       email?: string | null;
     }[];
   };
+}
+
+export function isFirestoreOfflineError(error: unknown): boolean {
+  if (!error) return false;
+  const code = typeof (error as any)?.code === 'string' ? (error as any).code : '';
+  const msg =
+    error instanceof Error
+      ? error.message
+      : typeof error === 'string'
+        ? error
+        : String(error);
+  const lower = msg.toLowerCase();
+  return (
+    code === 'unavailable' ||
+    code === 'firestore/unavailable' ||
+    code === 'firestore/offline' ||
+    lower.includes('client is offline') ||
+    lower.includes('could not reach cloud firestore backend') ||
+    lower.includes('network-request-failed')
+  );
 }
 
 export function handleFirestoreError(
@@ -65,8 +105,8 @@ async function testConnection() {
   try {
     await getDocFromServer(doc(db, 'test', 'connection'));
   } catch (error) {
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
+    if (isFirestoreOfflineError(error)) {
+      console.warn('Firestore connection check: client is currently offline or using local/live server fallback.');
     }
   }
 }

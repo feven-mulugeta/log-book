@@ -11,9 +11,15 @@ import {
   where,
   serverTimestamp,
   Timestamp,
+  enableNetwork,
 } from 'firebase/firestore';
 import { User } from 'firebase/auth';
-import { db, handleFirestoreError, OperationType } from '../firebase';
+import {
+  db,
+  handleFirestoreError,
+  isFirestoreOfflineError,
+  OperationType,
+} from '../firebase';
 import {
   CohortStudentRecord,
   DetailedActivityLogSheet,
@@ -24,6 +30,61 @@ import {
 } from '../types/nursing';
 import { normalizeStudentRecord, getStudentPin } from './storage';
 import { ROOT_ADMIN_EMAIL } from '../contexts/FirebaseContext';
+
+export class FirestoreOfflineError extends Error {
+  code = 'firestore/offline';
+  constructor(
+    message = 'Cloud database is temporarily unreachable (client offline). Your logbook changes are safely saved locally and will sync automatically when reconnected.'
+  ) {
+    super(message);
+    this.name = 'FirestoreOfflineError';
+  }
+}
+
+export function reconnectFirestoreNetwork(): Promise<void> {
+  return enableNetwork(db).catch(() => {});
+}
+
+function isPermissionDeniedError(error: unknown): boolean {
+  const code = typeof (error as any)?.code === 'string' ? (error as any).code : '';
+  const msg = error instanceof Error ? error.message : String(error || '');
+  return (
+    code === 'permission-denied' ||
+    code === 'firestore/permission-denied' ||
+    msg.toLowerCase().includes('missing or insufficient permissions')
+  );
+}
+
+function handleFirestoreFailure(
+  error: unknown,
+  operationType: OperationType,
+  path: string | null
+): never {
+  if (error instanceof FirestoreOfflineError) {
+    throw error;
+  }
+  if (isFirestoreOfflineError(error)) {
+    throw new FirestoreOfflineError();
+  }
+  handleFirestoreError(error, operationType, path);
+}
+
+async function withFirestoreRetry<T>(fn: () => Promise<T>, maxRetries = 2): Promise<T> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastErr = err;
+      if (!isFirestoreOfflineError(err) || attempt === maxRetries) {
+        throw err;
+      }
+      await enableNetwork(db).catch(() => {});
+      await new Promise((resolve) => setTimeout(resolve, (attempt + 1) * 450));
+    }
+  }
+  throw lastErr;
+}
 
 export function toFirestoreSafeId(raw: string, fallback = 'record'): string {
   const cleaned = String(raw || fallback)
@@ -99,57 +160,65 @@ export async function ensureUserDocuments(user: User): Promise<void> {
 
   try {
     const userRef = doc(db, 'users', user.uid);
-    const snap = await getDoc(userRef);
+    const snap = await withFirestoreRetry(() => getDoc(userRef));
     const desiredRole = isUserRootAdmin(user) ? 'admin' : 'member';
 
     if (!snap.exists()) {
-      await setDoc(userRef, {
-        uid: user.uid,
-        displayName: boundStr(user.displayName || user.email?.split('@')[0] || 'User', 120),
-        role: desiredRole,
-        linkedStudentId: '',
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await withFirestoreRetry(() =>
+        setDoc(userRef, {
+          uid: user.uid,
+          displayName: boundStr(user.displayName || user.email?.split('@')[0] || 'User', 120),
+          role: desiredRole,
+          linkedStudentId: '',
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      );
     } else {
-      await updateDoc(userRef, {
-        displayName: boundStr(user.displayName || user.email?.split('@')[0] || 'User', 120),
-        updatedAt: serverTimestamp(),
-      });
+      await withFirestoreRetry(() =>
+        updateDoc(userRef, {
+          displayName: boundStr(user.displayName || user.email?.split('@')[0] || 'User', 120),
+          updatedAt: serverTimestamp(),
+        })
+      );
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, userPath);
+    handleFirestoreFailure(error, OperationType.WRITE, userPath);
   }
 
   try {
     const privRef = doc(db, 'users', user.uid, 'private', 'info');
-    await setDoc(
-      privRef,
-      {
-        uid: user.uid,
-        email: boundStr(user.email || '', 200),
-        updatedAt: serverTimestamp(),
-      },
-      { merge: true }
+    await withFirestoreRetry(() =>
+      setDoc(
+        privRef,
+        {
+          uid: user.uid,
+          email: boundStr(user.email || '', 200),
+          updatedAt: serverTimestamp(),
+        },
+        { merge: true }
+      )
     );
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, privatePath);
+    handleFirestoreFailure(error, OperationType.WRITE, privatePath);
   }
 
   if (isUserRootAdmin(user)) {
     const adminPath = `admins/${user.uid}`;
     try {
       const adminRef = doc(db, 'admins', user.uid);
-      const adminSnap = await getDoc(adminRef);
+      const adminSnap = await withFirestoreRetry(() => getDoc(adminRef));
       if (!adminSnap.exists()) {
-        await setDoc(adminRef, {
-          uid: user.uid,
-          email: boundStr(user.email || ROOT_ADMIN_EMAIL, 200),
-          createdAt: serverTimestamp(),
-        });
+        await withFirestoreRetry(() =>
+          setDoc(adminRef, {
+            uid: user.uid,
+            email: boundStr(user.email || ROOT_ADMIN_EMAIL, 200),
+            createdAt: serverTimestamp(),
+          })
+        );
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, adminPath);
+      handleFirestoreFailure(error, OperationType.WRITE, adminPath);
     }
   }
 }
@@ -160,10 +229,10 @@ export async function checkIsStaffInFirestore(user: User): Promise<boolean> {
 
   const staffPath = `staffMembers/${user.uid}`;
   try {
-    const staffSnap = await getDoc(doc(db, 'staffMembers', user.uid));
+    const staffSnap = await withFirestoreRetry(() => getDoc(doc(db, 'staffMembers', user.uid)));
     return staffSnap.exists();
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, staffPath);
+    handleFirestoreFailure(error, OperationType.GET, staffPath);
   }
 }
 
@@ -178,33 +247,37 @@ export async function registerStaffMemberInFirestore(
 
   try {
     const staffRef = doc(db, 'staffMembers', user.uid);
-    const existing = await getDoc(staffRef);
+    const existing = await withFirestoreRetry(() => getDoc(staffRef));
     if (!existing.exists()) {
-      await setDoc(staffRef, {
-        uid: user.uid,
-        preceptorId,
-        name: boundStr(preceptor.name, 120),
-        role: preceptor.role || 'preceptor',
-        title: boundStr(preceptor.title, 120),
-        wardDepartment: boundStr(preceptor.wardDepartment, 120),
-        initials: boundStr(preceptor.initials, 10),
-        claimPin: boundStr(enteredPin, 10),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await withFirestoreRetry(() =>
+        setDoc(staffRef, {
+          uid: user.uid,
+          preceptorId,
+          name: boundStr(preceptor.name, 120),
+          role: preceptor.role || 'preceptor',
+          title: boundStr(preceptor.title, 120),
+          wardDepartment: boundStr(preceptor.wardDepartment, 120),
+          initials: boundStr(preceptor.initials, 10),
+          claimPin: boundStr(enteredPin, 10),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      );
     } else if (isUserRootAdmin(user)) {
-      await updateDoc(staffRef, {
-        preceptorId,
-        name: boundStr(preceptor.name, 120),
-        role: preceptor.role || 'preceptor',
-        title: boundStr(preceptor.title, 120),
-        wardDepartment: boundStr(preceptor.wardDepartment, 120),
-        initials: boundStr(preceptor.initials, 10),
-        updatedAt: serverTimestamp(),
-      });
+      await withFirestoreRetry(() =>
+        updateDoc(staffRef, {
+          preceptorId,
+          name: boundStr(preceptor.name, 120),
+          role: preceptor.role || 'preceptor',
+          title: boundStr(preceptor.title, 120),
+          wardDepartment: boundStr(preceptor.wardDepartment, 120),
+          initials: boundStr(preceptor.initials, 10),
+          updatedAt: serverTimestamp(),
+        })
+      );
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, staffPath);
+    handleFirestoreFailure(error, OperationType.WRITE, staffPath);
   }
 }
 
@@ -216,18 +289,20 @@ export async function syncPreceptorSecretIfAdmin(
   const safeId = toFirestoreSafeId(preceptor.id, 'preceptor');
   const path = `staffSecrets/${safeId}`;
   try {
-    await setDoc(doc(db, 'staffSecrets', safeId), {
-      preceptorId: safeId,
-      name: boundStr(preceptor.name, 120),
-      role: preceptor.role || 'preceptor',
-      title: boundStr(preceptor.title, 120),
-      wardDepartment: boundStr(preceptor.wardDepartment, 120),
-      initials: boundStr(preceptor.initials, 10),
-      pin: boundStr(preceptor.pin, 10, '0000'),
-      updatedAt: serverTimestamp(),
-    });
+    await withFirestoreRetry(() =>
+      setDoc(doc(db, 'staffSecrets', safeId), {
+        preceptorId: safeId,
+        name: boundStr(preceptor.name, 120),
+        role: preceptor.role || 'preceptor',
+        title: boundStr(preceptor.title, 120),
+        wardDepartment: boundStr(preceptor.wardDepartment, 120),
+        initials: boundStr(preceptor.initials, 10),
+        pin: boundStr(preceptor.pin, 10, '0000'),
+        updatedAt: serverTimestamp(),
+      })
+    );
   } catch (error) {
-    handleFirestoreError(error, OperationType.WRITE, path);
+    handleFirestoreFailure(error, OperationType.WRITE, path);
   }
 }
 
@@ -244,21 +319,23 @@ export async function seedInitialInstitutionalDataIfAdmin(
     const path = `staffSecrets/${safeId}`;
     try {
       const ref = doc(db, 'staffSecrets', safeId);
-      const snap = await getDoc(ref);
+      const snap = await withFirestoreRetry(() => getDoc(ref));
       if (!snap.exists()) {
-        await setDoc(ref, {
-          preceptorId: safeId,
-          name: boundStr(p.name, 120),
-          role: p.role || 'preceptor',
-          title: boundStr(p.title, 120),
-          wardDepartment: boundStr(p.wardDepartment, 120),
-          initials: boundStr(p.initials, 10),
-          pin: boundStr(p.pin, 10, '0000'),
-          updatedAt: serverTimestamp(),
-        });
+        await withFirestoreRetry(() =>
+          setDoc(ref, {
+            preceptorId: safeId,
+            name: boundStr(p.name, 120),
+            role: p.role || 'preceptor',
+            title: boundStr(p.title, 120),
+            wardDepartment: boundStr(p.wardDepartment, 120),
+            initials: boundStr(p.initials, 10),
+            pin: boundStr(p.pin, 10, '0000'),
+            updatedAt: serverTimestamp(),
+          })
+        );
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, path);
+      handleFirestoreFailure(error, OperationType.WRITE, path);
     }
   }
 
@@ -270,41 +347,45 @@ export async function seedInitialInstitutionalDataIfAdmin(
 
     try {
       const secretRef = doc(db, 'studentSecrets', safeId);
-      const secretSnap = await getDoc(secretRef);
+      const secretSnap = await withFirestoreRetry(() => getDoc(secretRef));
       if (!secretSnap.exists()) {
-        await setDoc(secretRef, {
-          studentId: safeId,
-          pin: boundStr(pin, 10, '0000'),
-          updatedAt: serverTimestamp(),
-        });
+        await withFirestoreRetry(() =>
+          setDoc(secretRef, {
+            studentId: safeId,
+            pin: boundStr(pin, 10, '0000'),
+            updatedAt: serverTimestamp(),
+          })
+        );
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `studentSecrets/${safeId}`);
+      handleFirestoreFailure(error, OperationType.WRITE, `studentSecrets/${safeId}`);
     }
 
     try {
       const docRef = doc(db, 'cohortStudents', safeId);
-      const docSnap = await getDoc(docRef);
+      const docSnap = await withFirestoreRetry(() => getDoc(docRef));
       if (!docSnap.exists()) {
-        await setDoc(docRef, {
-          id: safeId,
-          ownerUid: '',
-          preceptorUid: '',
-          claimPin: '',
-          traineeName: boundStr(student.traineeInfo.traineeName, 120),
-          traineeId: boundStr(student.traineeInfo.traineeId, 64),
-          clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
-          assignedClinicalPreceptor: boundStr(student.traineeInfo.assignedClinicalPreceptor, 120),
-          trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
-          trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
-          finalSignoff: serializeFinalSignoff(student.finalSignoff),
-          logsSummaryCount: student.detailedLogs.length,
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        await withFirestoreRetry(() =>
+          setDoc(docRef, {
+            id: safeId,
+            ownerUid: '',
+            preceptorUid: '',
+            claimPin: '',
+            traineeName: boundStr(student.traineeInfo.traineeName, 120),
+            traineeId: boundStr(student.traineeInfo.traineeId, 64),
+            clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
+            assignedClinicalPreceptor: boundStr(student.traineeInfo.assignedClinicalPreceptor, 120),
+            trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
+            trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
+            finalSignoff: serializeFinalSignoff(student.finalSignoff),
+            logsSummaryCount: student.detailedLogs.length,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.WRITE, `cohortStudents/${safeId}`);
+      handleFirestoreFailure(error, OperationType.WRITE, `cohortStudents/${safeId}`);
     }
   }
 }
@@ -330,13 +411,17 @@ export async function hydrateStudentFromDocData(
   if (!shouldSkipLogs) {
     try {
       if (isAdmin) {
-        const logsSnap = await getDocs(collection(db, 'cohortStudents', safeId, 'logs'));
+        const logsSnap = await withFirestoreRetry(() =>
+          getDocs(collection(db, 'cohortStudents', safeId, 'logs'))
+        );
         logDocs = logsSnap.docs.map((d) => ({ id: d.id, data: d.data() }));
       } else if (isOwner) {
-        const logsSnap = await getDocs(
-          query(
-            collection(db, 'cohortStudents', safeId, 'logs'),
-            where('ownerUid', '==', user.uid)
+        const logsSnap = await withFirestoreRetry(() =>
+          getDocs(
+            query(
+              collection(db, 'cohortStudents', safeId, 'logs'),
+              where('ownerUid', '==', user.uid)
+            )
           )
         );
         logDocs = logsSnap.docs.map((d) => ({ id: d.id, data: d.data() }));
@@ -344,7 +429,9 @@ export async function hydrateStudentFromDocData(
         // Verified Preceptor/Staff fetches sessions 1..18 via getDoc (uses allow get with isStaffMember)
         const snaps = await Promise.all(
           Array.from({ length: 18 }, (_, i) =>
-            getDoc(doc(db, 'cohortStudents', safeId, 'logs', `session-${i + 1}`)).catch(() => null)
+            withFirestoreRetry(() =>
+              getDoc(doc(db, 'cohortStudents', safeId, 'logs', `session-${i + 1}`))
+            ).catch(() => null)
           )
         );
         for (const s of snaps) {
@@ -354,7 +441,7 @@ export async function hydrateStudentFromDocData(
         }
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, logsPath);
+      handleFirestoreFailure(error, OperationType.LIST, logsPath);
     }
   }
 
@@ -366,8 +453,10 @@ export async function hydrateStudentFromDocData(
       if (attIds.length > 0) {
         const attSnaps = await Promise.all(
           attIds.map((attId) =>
-            getDoc(
-              doc(db, 'cohortStudents', safeId, 'logs', logDocId, 'attachments', attId)
+            withFirestoreRetry(() =>
+              getDoc(
+                doc(db, 'cohortStudents', safeId, 'logs', logDocId, 'attachments', attId)
+              )
             ).catch(() => null)
           )
         );
@@ -434,11 +523,11 @@ export async function loadStudentFromFirestore(
   const safeId = toFirestoreSafeId(rawStudentId, 'student');
   const path = `cohortStudents/${safeId}`;
   try {
-    const snap = await getDoc(doc(db, 'cohortStudents', safeId));
+    const snap = await withFirestoreRetry(() => getDoc(doc(db, 'cohortStudents', safeId)));
     if (!snap.exists()) return null;
     return await hydrateStudentFromDocData(user, safeId, snap.data(), localPinHint);
   } catch (error) {
-    handleFirestoreError(error, OperationType.GET, path);
+    handleFirestoreFailure(error, OperationType.GET, path);
   }
 }
 
@@ -449,7 +538,7 @@ export async function loadAllCohortStudentsForAdmin(
   if (!isUserRootAdmin(user)) return [];
   const path = 'cohortStudents';
   try {
-    const snap = await getDocs(collection(db, 'cohortStudents'));
+    const snap = await withFirestoreRetry(() => getDocs(collection(db, 'cohortStudents')));
     const results = await Promise.all(
       snap.docs.map(async (d) => {
         const data = d.data();
@@ -462,7 +551,7 @@ export async function loadAllCohortStudentsForAdmin(
     );
     return results;
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, path);
+    handleFirestoreFailure(error, OperationType.LIST, path);
   }
 }
 
@@ -484,7 +573,7 @@ export async function loadOwnedStudentsForUser(
       collection(db, 'cohortStudents'),
       where('ownerUid', '==', user.uid)
     );
-    const ownedSnap = await getDocs(ownedQ);
+    const ownedSnap = await withFirestoreRetry(() => getDocs(ownedQ));
     for (const d of ownedSnap.docs) {
       seenIds.add(d.id);
       const data = d.data();
@@ -492,7 +581,7 @@ export async function loadOwnedStudentsForUser(
       results.push(await hydrateStudentFromDocData(user, d.id, data, pinHint));
     }
   } catch (error) {
-    handleFirestoreError(error, OperationType.LIST, 'cohortStudents');
+    handleFirestoreFailure(error, OperationType.LIST, 'cohortStudents');
   }
 
   if (isStaff) {
@@ -501,7 +590,7 @@ export async function loadOwnedStudentsForUser(
         collection(db, 'cohortStudents'),
         where('preceptorUid', '==', user.uid)
       );
-      const assignedSnap = await getDocs(assignedQ);
+      const assignedSnap = await withFirestoreRetry(() => getDocs(assignedQ));
       for (const d of assignedSnap.docs) {
         if (seenIds.has(d.id)) continue;
         seenIds.add(d.id);
@@ -510,7 +599,7 @@ export async function loadOwnedStudentsForUser(
         results.push(await hydrateStudentFromDocData(user, d.id, data, pinHint));
       }
     } catch (error) {
-      handleFirestoreError(error, OperationType.LIST, 'cohortStudents');
+      handleFirestoreFailure(error, OperationType.LIST, 'cohortStudents');
     }
   }
 
@@ -542,54 +631,62 @@ export async function saveStudentDossierToFirestore(
   let parentPreceptorUid = options.isStaff ? user.uid : '';
   let existingData: any = null;
 
-  // Attempt Action 1 Claim first if user is a trainee claiming an unclaimed seeded doc
+  // Attempt Action 1 Claim first ONLY if permission-denied indicates an unclaimed seeded doc
   if (!isAdmin && !options.isStaff) {
     try {
-      const snap = await getDoc(docRef);
-      if (snap.exists()) {
-        existingData = snap.data();
-      }
-    } catch {
-      // Unclaimed docs block non-staff get() until claimed via updateDoc Action 1
-      try {
-        await updateDoc(docRef, {
-          ownerUid: user.uid,
-          claimPin: effectivePin,
-          updatedAt: serverTimestamp(),
-        });
-        const snapAfterClaim = await getDoc(docRef);
-        if (snapAfterClaim.exists()) {
-          existingData = snapAfterClaim.data();
-        }
-      } catch (claimErr) {
-        handleFirestoreError(claimErr, OperationType.UPDATE, docPath);
-      }
-    }
-  } else {
-    try {
-      const snap = await getDoc(docRef);
+      const snap = await withFirestoreRetry(() => getDoc(docRef));
       if (snap.exists()) {
         existingData = snap.data();
       }
     } catch (err) {
-      handleFirestoreError(err, OperationType.GET, docPath);
+      if (isPermissionDeniedError(err)) {
+        // Unclaimed docs block non-staff get() until claimed via updateDoc Action 1
+        try {
+          await withFirestoreRetry(() =>
+            updateDoc(docRef, {
+              ownerUid: user.uid,
+              claimPin: effectivePin,
+              updatedAt: serverTimestamp(),
+            })
+          );
+          const snapAfterClaim = await withFirestoreRetry(() => getDoc(docRef));
+          if (snapAfterClaim.exists()) {
+            existingData = snapAfterClaim.data();
+          }
+        } catch (claimErr) {
+          handleFirestoreFailure(claimErr, OperationType.UPDATE, docPath);
+        }
+      } else {
+        handleFirestoreFailure(err, OperationType.GET, docPath);
+      }
+    }
+  } else {
+    try {
+      const snap = await withFirestoreRetry(() => getDoc(docRef));
+      if (snap.exists()) {
+        existingData = snap.data();
+      }
+    } catch (err) {
+      handleFirestoreFailure(err, OperationType.GET, docPath);
     }
   }
 
   // If admin is saving a new student, ensure studentSecrets exists too
   if (isAdmin) {
     try {
-      await setDoc(
-        doc(db, 'studentSecrets', safeId),
-        {
-          studentId: safeId,
-          pin: effectivePin,
-          updatedAt: serverTimestamp(),
-        },
-        { merge: true }
+      await withFirestoreRetry(() =>
+        setDoc(
+          doc(db, 'studentSecrets', safeId),
+          {
+            studentId: safeId,
+            pin: effectivePin,
+            updatedAt: serverTimestamp(),
+          },
+          { merge: true }
+        )
       );
     } catch (err) {
-      handleFirestoreError(err, OperationType.WRITE, `studentSecrets/${safeId}`);
+      handleFirestoreFailure(err, OperationType.WRITE, `studentSecrets/${safeId}`);
     }
   }
 
@@ -598,29 +695,31 @@ export async function saveStudentDossierToFirestore(
     parentOwnerUid = isAdmin ? '' : user.uid;
     parentPreceptorUid = options.isStaff && !isAdmin ? user.uid : '';
     try {
-      await setDoc(docRef, {
-        id: safeId,
-        ownerUid: parentOwnerUid,
-        preceptorUid: parentPreceptorUid,
-        claimPin: effectivePin,
-        traineeName: boundStr(student.traineeInfo.traineeName, 120),
-        traineeId: boundStr(student.traineeInfo.traineeId, 64),
-        clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
-        assignedClinicalPreceptor: boundStr(
-          student.traineeInfo.assignedClinicalPreceptor,
-          120
-        ),
-        trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
-        trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
-        finalSignoff: serializeFinalSignoff(
-          isAdmin ? student.finalSignoff : { ...student.finalSignoff, isCertified: false }
-        ),
-        logsSummaryCount: Math.min(100, student.detailedLogs.length),
-        createdAt: serverTimestamp(),
-        updatedAt: serverTimestamp(),
-      });
+      await withFirestoreRetry(() =>
+        setDoc(docRef, {
+          id: safeId,
+          ownerUid: parentOwnerUid,
+          preceptorUid: parentPreceptorUid,
+          claimPin: effectivePin,
+          traineeName: boundStr(student.traineeInfo.traineeName, 120),
+          traineeId: boundStr(student.traineeInfo.traineeId, 64),
+          clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
+          assignedClinicalPreceptor: boundStr(
+            student.traineeInfo.assignedClinicalPreceptor,
+            120
+          ),
+          trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
+          trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
+          finalSignoff: serializeFinalSignoff(
+            isAdmin ? student.finalSignoff : { ...student.finalSignoff, isCertified: false }
+          ),
+          logsSummaryCount: Math.min(100, student.detailedLogs.length),
+          createdAt: serverTimestamp(),
+          updatedAt: serverTimestamp(),
+        })
+      );
     } catch (err) {
-      handleFirestoreError(err, OperationType.CREATE, docPath);
+      handleFirestoreFailure(err, OperationType.CREATE, docPath);
     }
   } else {
     parentOwnerUid = existingData.ownerUid || (isAdmin ? '' : user.uid);
@@ -630,51 +729,57 @@ export async function saveStudentDossierToFirestore(
     if (!existingData.finalSignoff?.isCertified || isAdmin) {
       try {
         if (isAdmin) {
-          await updateDoc(docRef, {
-            traineeName: boundStr(student.traineeInfo.traineeName, 120),
-            traineeId: boundStr(student.traineeInfo.traineeId, 64),
-            clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
-            assignedClinicalPreceptor: boundStr(
-              student.traineeInfo.assignedClinicalPreceptor,
-              120
-            ),
-            trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
-            trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
-            finalSignoff: serializeFinalSignoff(student.finalSignoff),
-            logsSummaryCount: Math.min(100, student.detailedLogs.length),
-            updatedAt: serverTimestamp(),
-          });
+          await withFirestoreRetry(() =>
+            updateDoc(docRef, {
+              traineeName: boundStr(student.traineeInfo.traineeName, 120),
+              traineeId: boundStr(student.traineeInfo.traineeId, 64),
+              clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
+              assignedClinicalPreceptor: boundStr(
+                student.traineeInfo.assignedClinicalPreceptor,
+                120
+              ),
+              trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
+              trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
+              finalSignoff: serializeFinalSignoff(student.finalSignoff),
+              logsSummaryCount: Math.min(100, student.detailedLogs.length),
+              updatedAt: serverTimestamp(),
+            })
+          );
         } else if (options.isStaff) {
-          await updateDoc(docRef, {
-            preceptorUid: user.uid,
-            clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
-            assignedClinicalPreceptor: boundStr(
-              student.traineeInfo.assignedClinicalPreceptor,
-              120
-            ),
-            trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
-            trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
-            finalSignoff: serializeFinalSignoff(student.finalSignoff),
-            logsSummaryCount: Math.min(100, student.detailedLogs.length),
-            updatedAt: serverTimestamp(),
-          });
+          await withFirestoreRetry(() =>
+            updateDoc(docRef, {
+              preceptorUid: user.uid,
+              clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
+              assignedClinicalPreceptor: boundStr(
+                student.traineeInfo.assignedClinicalPreceptor,
+                120
+              ),
+              trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
+              trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
+              finalSignoff: serializeFinalSignoff(student.finalSignoff),
+              logsSummaryCount: Math.min(100, student.detailedLogs.length),
+              updatedAt: serverTimestamp(),
+            })
+          );
         } else if (existingData.ownerUid === user.uid) {
-          await updateDoc(docRef, {
-            traineeName: boundStr(student.traineeInfo.traineeName, 120),
-            traineeId: boundStr(student.traineeInfo.traineeId, 64),
-            clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
-            assignedClinicalPreceptor: boundStr(
-              student.traineeInfo.assignedClinicalPreceptor,
-              120
-            ),
-            trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
-            trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
-            logsSummaryCount: Math.min(100, student.detailedLogs.length),
-            updatedAt: serverTimestamp(),
-          });
+          await withFirestoreRetry(() =>
+            updateDoc(docRef, {
+              traineeName: boundStr(student.traineeInfo.traineeName, 120),
+              traineeId: boundStr(student.traineeInfo.traineeId, 64),
+              clinicalDepartmentWard: boundStr(student.traineeInfo.clinicalDepartmentWard, 120),
+              assignedClinicalPreceptor: boundStr(
+                student.traineeInfo.assignedClinicalPreceptor,
+                120
+              ),
+              trainingPeriodFrom: boundStr(student.traineeInfo.trainingPeriodFrom, 32),
+              trainingPeriodTo: boundStr(student.traineeInfo.trainingPeriodTo, 32),
+              logsSummaryCount: Math.min(100, student.detailedLogs.length),
+              updatedAt: serverTimestamp(),
+            })
+          );
         }
       } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, docPath);
+        handleFirestoreFailure(err, OperationType.UPDATE, docPath);
       }
     }
   }
@@ -696,10 +801,10 @@ export async function saveStudentDossierToFirestore(
 
     let existingLog: any = null;
     try {
-      const logSnap = await getDoc(logRef);
+      const logSnap = await withFirestoreRetry(() => getDoc(logRef));
       if (logSnap.exists()) existingLog = logSnap.data();
     } catch (err) {
-      handleFirestoreError(err, OperationType.GET, logPath);
+      handleFirestoreFailure(err, OperationType.GET, logPath);
     }
 
     const existingAttachmentIds: string[] = Array.isArray(existingLog?.attachmentIds)
@@ -714,84 +819,94 @@ export async function saveStudentDossierToFirestore(
     if (!existingLog) {
       const isSignedByStaff = (isAdmin || options.isStaff) && log.status === 'Met';
       try {
-        await setDoc(logRef, {
-          id: safeLogId,
-          studentId: safeId,
-          ownerUid: parentOwnerUid,
-          preceptorUid: isAdmin || options.isStaff ? user.uid : parentPreceptorUid,
-          sessionNumber: Math.min(18, Math.max(1, Number(log.sessionNumber) || 1)),
-          sessionTitle: boundStr(log.sessionTitle, 250),
-          subCompetencyId: log.subCompetencyId || 'sub_comp_1',
-          subCompetencyTitle: boundStr(log.subCompetencyTitle, 250),
-          dateOfActivity: boundStr(log.dateOfActivity, 32),
-          durationHours: Math.min(240, Math.max(0, Number(log.durationHours) || 0)),
-          clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
-          activityDescription: boundStr(log.activityDescription, 10000),
-          reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
-          attachmentsCount: finalAttachmentIds.length,
-          attachmentIds: finalAttachmentIds,
-          preceptorSignoff: serializePreceptorSignoff(
-            isSignedByStaff ? log.preceptorSignoff : { isSigned: false }
-          ),
-          status: isSignedByStaff ? 'Met' : 'Pending',
-          source: log.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
-          createdAt: serverTimestamp(),
-          updatedAt: serverTimestamp(),
-        });
+        await withFirestoreRetry(() =>
+          setDoc(logRef, {
+            id: safeLogId,
+            studentId: safeId,
+            ownerUid: parentOwnerUid,
+            preceptorUid: isAdmin || options.isStaff ? user.uid : parentPreceptorUid,
+            sessionNumber: Math.min(18, Math.max(1, Number(log.sessionNumber) || 1)),
+            sessionTitle: boundStr(log.sessionTitle, 250),
+            subCompetencyId: log.subCompetencyId || 'sub_comp_1',
+            subCompetencyTitle: boundStr(log.subCompetencyTitle, 250),
+            dateOfActivity: boundStr(log.dateOfActivity, 32),
+            durationHours: Math.min(240, Math.max(0, Number(log.durationHours) || 0)),
+            clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
+            activityDescription: boundStr(log.activityDescription, 10000),
+            reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
+            attachmentsCount: finalAttachmentIds.length,
+            attachmentIds: finalAttachmentIds,
+            preceptorSignoff: serializePreceptorSignoff(
+              isSignedByStaff ? log.preceptorSignoff : { isSigned: false }
+            ),
+            status: isSignedByStaff ? 'Met' : 'Pending',
+            source: log.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          })
+        );
       } catch (err) {
-        handleFirestoreError(err, OperationType.CREATE, logPath);
+        handleFirestoreFailure(err, OperationType.CREATE, logPath);
       }
     } else {
       try {
         if (isAdmin) {
-          await updateDoc(logRef, {
-            dateOfActivity: boundStr(log.dateOfActivity, 32),
-            durationHours: Math.min(240, Math.max(0, Number(log.durationHours) || 0)),
-            clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
-            activityDescription: boundStr(log.activityDescription, 10000),
-            reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
-            attachmentsCount: finalAttachmentIds.length,
-            attachmentIds: finalAttachmentIds,
-            preceptorSignoff: serializePreceptorSignoff(log.preceptorSignoff),
-            status: log.status === 'Met' ? 'Met' : 'Pending',
-            source: log.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
-            updatedAt: serverTimestamp(),
-          });
+          await withFirestoreRetry(() =>
+            updateDoc(logRef, {
+              dateOfActivity: boundStr(log.dateOfActivity, 32),
+              durationHours: Math.min(240, Math.max(0, Number(log.durationHours) || 0)),
+              clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
+              activityDescription: boundStr(log.activityDescription, 10000),
+              reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
+              attachmentsCount: finalAttachmentIds.length,
+              attachmentIds: finalAttachmentIds,
+              preceptorSignoff: serializePreceptorSignoff(log.preceptorSignoff),
+              status: log.status === 'Met' ? 'Met' : 'Pending',
+              source: log.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
+              updatedAt: serverTimestamp(),
+            })
+          );
         } else if (options.isStaff) {
-          await updateDoc(logRef, {
-            preceptorUid: user.uid,
-            dateOfActivity: boundStr(log.dateOfActivity, 32),
-            clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
-            preceptorSignoff: serializePreceptorSignoff(log.preceptorSignoff),
-            status: log.status === 'Met' ? 'Met' : 'Pending',
-            updatedAt: serverTimestamp(),
-          });
+          await withFirestoreRetry(() =>
+            updateDoc(logRef, {
+              preceptorUid: user.uid,
+              dateOfActivity: boundStr(log.dateOfActivity, 32),
+              clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
+              preceptorSignoff: serializePreceptorSignoff(log.preceptorSignoff),
+              status: log.status === 'Met' ? 'Met' : 'Pending',
+              updatedAt: serverTimestamp(),
+            })
+          );
         } else if (existingLog.status === 'Pending' && parentOwnerUid === user.uid) {
-          await updateDoc(logRef, {
-            dateOfActivity: boundStr(log.dateOfActivity, 32),
-            durationHours: Math.min(240, Math.max(0, Number(log.durationHours) || 0)),
-            clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
-            activityDescription: boundStr(log.activityDescription, 10000),
-            reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
-            attachmentsCount: finalAttachmentIds.length,
-            attachmentIds: finalAttachmentIds,
-            source: log.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
-            updatedAt: serverTimestamp(),
-          });
+          await withFirestoreRetry(() =>
+            updateDoc(logRef, {
+              dateOfActivity: boundStr(log.dateOfActivity, 32),
+              durationHours: Math.min(240, Math.max(0, Number(log.durationHours) || 0)),
+              clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),
+              activityDescription: boundStr(log.activityDescription, 10000),
+              reflectiveNotesLessonsLearned: boundStr(log.reflectiveNotesLessonsLearned, 10000),
+              attachmentsCount: finalAttachmentIds.length,
+              attachmentIds: finalAttachmentIds,
+              source: log.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
+              updatedAt: serverTimestamp(),
+            })
+          );
         } else if (existingLog.status === 'Met' && parentOwnerUid === user.uid) {
           const attChanged =
             finalAttachmentIds.length !== existingAttachmentIds.length ||
             finalAttachmentIds.some((id, i) => existingAttachmentIds[i] !== id);
           if (attChanged) {
-            await updateDoc(logRef, {
-              attachmentsCount: finalAttachmentIds.length,
-              attachmentIds: finalAttachmentIds,
-              updatedAt: serverTimestamp(),
-            });
+            await withFirestoreRetry(() =>
+              updateDoc(logRef, {
+                attachmentsCount: finalAttachmentIds.length,
+                attachmentIds: finalAttachmentIds,
+                updatedAt: serverTimestamp(),
+              })
+            );
           }
         }
       } catch (err) {
-        handleFirestoreError(err, OperationType.UPDATE, logPath);
+        handleFirestoreFailure(err, OperationType.UPDATE, logPath);
       }
     }
 
@@ -803,26 +918,28 @@ export async function saveStudentDossierToFirestore(
       const attPath = `cohortStudents/${safeId}/logs/${safeLogId}/attachments/${safeAttId}`;
       const attRef = doc(db, 'cohortStudents', safeId, 'logs', safeLogId, 'attachments', safeAttId);
       try {
-        const attSnap = await getDoc(attRef);
+        const attSnap = await withFirestoreRetry(() => getDoc(attRef));
         if (!attSnap.exists()) {
-          await setDoc(attRef, {
-            id: safeAttId,
-            studentId: safeId,
-            logId: safeLogId,
-            ownerUid: parentOwnerUid,
-            preceptorUid: isAdmin || options.isStaff ? user.uid : parentPreceptorUid,
-            name: boundStr(att.name, 200, 'Clinical Evidence'),
-            type: boundStr(att.type, 40, 'clinical_photo'),
-            dataUrl: boundStr(att.dataUrl, 750000),
-            notes: boundStr(att.notes, 1000, ''),
-            uploadedAt: boundStr(att.uploadedAt, 64, new Date().toISOString()),
-            sizeBytes: Math.min(1048576, Math.max(0, Number(att.sizeBytes) || att.dataUrl.length)),
-            createdAt: serverTimestamp(),
-            updatedAt: serverTimestamp(),
-          });
+          await withFirestoreRetry(() =>
+            setDoc(attRef, {
+              id: safeAttId,
+              studentId: safeId,
+              logId: safeLogId,
+              ownerUid: parentOwnerUid,
+              preceptorUid: isAdmin || options.isStaff ? user.uid : parentPreceptorUid,
+              name: boundStr(att.name, 200, 'Clinical Evidence'),
+              type: boundStr(att.type, 40, 'clinical_photo'),
+              dataUrl: boundStr(att.dataUrl, 750000),
+              notes: boundStr(att.notes, 1000, ''),
+              uploadedAt: boundStr(att.uploadedAt, 64, new Date().toISOString()),
+              sizeBytes: Math.min(1048576, Math.max(0, Number(att.sizeBytes) || att.dataUrl.length)),
+              createdAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            })
+          );
         }
       } catch (err) {
-        handleFirestoreError(err, OperationType.WRITE, attPath);
+        handleFirestoreFailure(err, OperationType.WRITE, attPath);
       }
     }
 
@@ -833,7 +950,7 @@ export async function saveStudentDossierToFirestore(
         if (!safeRemId) continue;
         const remRef = doc(db, 'cohortStudents', safeId, 'logs', safeLogId, 'attachments', safeRemId);
         try {
-          await deleteDoc(remRef);
+          await withFirestoreRetry(() => deleteDoc(remRef));
         } catch {
           // Ignore if attachment doc never existed in Firestore
         }
@@ -863,22 +980,24 @@ export async function removeAttachmentFromFirestore(
     .map((a) => toFirestoreSafeId(a.id, a.id));
 
   try {
-    const logSnap = await getDoc(logRef);
+    const logSnap = await withFirestoreRetry(() => getDoc(logRef));
     if (logSnap.exists()) {
-      await updateDoc(logRef, {
-        attachmentsCount: remainingIds.length,
-        attachmentIds: remainingIds,
-        updatedAt: serverTimestamp(),
-      });
+      await withFirestoreRetry(() =>
+        updateDoc(logRef, {
+          attachmentsCount: remainingIds.length,
+          attachmentIds: remainingIds,
+          updatedAt: serverTimestamp(),
+        })
+      );
     }
   } catch (err) {
-    handleFirestoreError(err, OperationType.UPDATE, `cohortStudents/${safeId}/logs/${safeLogId}`);
+    handleFirestoreFailure(err, OperationType.UPDATE, `cohortStudents/${safeId}/logs/${safeLogId}`);
   }
 
   try {
-    await deleteDoc(attRef);
+    await withFirestoreRetry(() => deleteDoc(attRef));
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, `cohortStudents/${safeId}/logs/${safeLogId}/attachments/${safeAttId}`);
+    handleFirestoreFailure(err, OperationType.DELETE, `cohortStudents/${safeId}/logs/${safeLogId}/attachments/${safeAttId}`);
   }
 }
 
@@ -890,9 +1009,9 @@ export async function deleteStudentFromFirestoreIfAdmin(
   const safeId = toFirestoreSafeId(rawStudentId, 'student');
   const path = `cohortStudents/${safeId}`;
   try {
-    await deleteDoc(doc(db, 'cohortStudents', safeId));
+    await withFirestoreRetry(() => deleteDoc(doc(db, 'cohortStudents', safeId)));
   } catch (err) {
-    handleFirestoreError(err, OperationType.DELETE, path);
+    handleFirestoreFailure(err, OperationType.DELETE, path);
   }
 }
 
@@ -924,7 +1043,7 @@ export function subscribeActiveStudentFirestore(
       }
     },
     (error) => {
-      handleFirestoreError(error, OperationType.GET, docPath);
+      handleFirestoreFailure(error, OperationType.GET, docPath);
     }
   );
 

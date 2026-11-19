@@ -1,6 +1,20 @@
 import React, { useState } from 'react';
-import { X, Upload, FileText, CheckCircle2, AlertTriangle, Image as ImageIcon } from 'lucide-react';
+import { X, Upload, FileText, CheckCircle2, AlertTriangle, Loader2, Shrink } from 'lucide-react';
 import { EvidenceAttachment } from '../types/nursing';
+import {
+  processAttachmentFile,
+  formatFileWeight,
+  estimateDataUrlBytes,
+} from '../utils/fileCompression';
+
+interface WeightInfo {
+  originalBytes: number;
+  finalBytes: number;
+  wasCompressed: boolean;
+  savedPercent: number;
+  width?: number;
+  height?: number;
+}
 
 interface EvidenceAttachmentModalProps {
   isOpen: boolean;
@@ -18,6 +32,8 @@ export function EvidenceAttachmentModal({
   const [fileData, setFileData] = useState<string | null>(null);
   const [fileName, setFileName] = useState('');
   const [fileSize, setFileSize] = useState<number>(0);
+  const [weightInfo, setWeightInfo] = useState<WeightInfo | null>(null);
+  const [isCompressing, setIsCompressing] = useState(false);
   const [notes, setNotes] = useState('');
   const [type, setType] = useState<EvidenceAttachment['type']>('assessment_form');
   const [deidentifiedConfirmed, setDeidentifiedConfirmed] = useState(false);
@@ -25,92 +41,47 @@ export function EvidenceAttachmentModal({
 
   if (!isOpen) return null;
 
-  const compressImageDataUrl = (rawDataUrl: string): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      const img = new Image();
-      img.onload = () => {
-        const tryCompress = (maxDim: number, quality: number): string => {
-          let { width, height } = img;
-          if (width > maxDim || height > maxDim) {
-            const ratio = Math.min(maxDim / width, maxDim / height);
-            width = Math.max(1, Math.round(width * ratio));
-            height = Math.max(1, Math.round(height * ratio));
-          }
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) return rawDataUrl;
-          ctx.fillStyle = '#ffffff';
-          ctx.fillRect(0, 0, width, height);
-          ctx.drawImage(img, 0, 0, width, height);
-          return canvas.toDataURL('image/jpeg', quality);
-        };
-
-        // Progressively optimize so attachment fits Firestore (<=750KB) & cross-device sync
-        const attempts: [number, number][] = [
-          [1600, 0.85],
-          [1400, 0.78],
-          [1200, 0.70],
-          [1000, 0.62],
-          [850, 0.55],
-        ];
-        for (const [dim, q] of attempts) {
-          const out = tryCompress(dim, q);
-          if (out.length <= 520000) {
-            resolve(out);
-            return;
-          }
-        }
-        resolve(tryCompress(720, 0.5));
-      };
-      img.onerror = () => reject(new Error('Unable to process image file.'));
-      img.src = rawDataUrl;
-    });
-  };
-
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     setError(null);
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 15 * 1024 * 1024) {
-      setError('File size exceeds 15MB limit. Please upload an optimized file.');
-      return;
+    setIsCompressing(true);
+    try {
+      const processed = await processAttachmentFile(file, {
+        maxRawMb: 15,
+        targetMaxChars: 480000,
+        hardMaxChars: 720000,
+      });
+
+      setFileName(processed.fileName);
+      setFileData(processed.dataUrl);
+      setFileSize(processed.finalBytes);
+      setWeightInfo({
+        originalBytes: processed.originalBytes,
+        finalBytes: processed.finalBytes,
+        wasCompressed: processed.wasCompressed,
+        savedPercent: processed.savedPercent,
+        width: processed.width,
+        height: processed.height,
+      });
+    } catch (err: any) {
+      setFileData(null);
+      setFileName('');
+      setFileSize(0);
+      setWeightInfo(null);
+      setError(
+        err?.message ||
+          'Could not optimize selected file. Please try a JPG or PNG image.'
+      );
+    } finally {
+      setIsCompressing(false);
+      e.target.value = '';
     }
-
-    const reader = new FileReader();
-    reader.onload = async () => {
-      try {
-        let resultData = reader.result as string;
-        const isRasterImage =
-          file.type.startsWith('image/') && !file.type.toLowerCase().includes('svg');
-
-        if (isRasterImage && resultData.length > 450000) {
-          resultData = await compressImageDataUrl(resultData);
-        }
-
-        if (resultData.length > 720000) {
-          setError(
-            'This PDF/document exceeds the 500 KB cloud attachment limit. Please upload a photo/screenshot (JPG/PNG) or a smaller compressed PDF.'
-          );
-          return;
-        }
-
-        setFileName(file.name);
-        setFileData(resultData);
-        setFileSize(resultData.length);
-      } catch {
-        setError('Could not optimize selected file. Please try a JPG or PNG image.');
-      }
-    };
-    reader.onerror = () => {
-      setError('Failed to read selected file.');
-    };
-    reader.readAsDataURL(file);
   };
 
   const handleQuickPreset = (presetType: 'sample_ecg' | 'sample_slip' | 'sample_dressing') => {
+    setError(null);
     let name = '';
     let svgContent = '';
     if (presetType === 'sample_ecg') {
@@ -123,9 +94,17 @@ export function EvidenceAttachmentModal({
       name = 'Deidentified_Wound_Progression_Record.svg';
       svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="300" viewBox="0 0 600 300"><rect width="600" height="300" fill="#f8fafc" stroke="#94a3b8" stroke-width="2"/><text x="30" y="40" font-family="Arial" font-size="16" font-weight="bold" fill="#0f172a">WOUND HEALING ASSESSMENT AUDIT</text><text x="30" y="80" font-family="Arial" font-size="12" fill="#334155">Stage: Granulation phase, 90% red tissue bed, zero foul odor</text><text x="30" y="110" font-family="Arial" font-size="12" fill="#334155">Dressing: Hydrocolloid dressing applied with paper tape border</text><rect x="30" y="160" width="180" height="60" fill="#eff6ff" stroke="#93c5fd"/><text x="40" y="195" font-family="Arial" font-size="12" font-weight="bold" fill="#1e40af">AUDITED BY CLINICAL LEAD</text></svg>`;
     }
-    setFileData(`data:image/svg+xml;utf8,${encodeURIComponent(svgContent)}`);
+    const dataUrl = `data:image/svg+xml;utf8,${encodeURIComponent(svgContent)}`;
+    const bytes = estimateDataUrlBytes(dataUrl);
+    setFileData(dataUrl);
     setFileName(name);
-    setFileSize(svgContent.length);
+    setFileSize(bytes);
+    setWeightInfo({
+      originalBytes: bytes,
+      finalBytes: bytes,
+      wasCompressed: false,
+      savedPercent: 0,
+    });
   };
 
   const handleSave = () => {
@@ -153,8 +132,11 @@ export function EvidenceAttachmentModal({
     // Reset state
     setFileData(null);
     setFileName('');
+    setFileSize(0);
+    setWeightInfo(null);
     setNotes('');
     setDeidentifiedConfirmed(false);
+    setError(null);
   };
 
   return (
@@ -227,16 +209,31 @@ export function EvidenceAttachmentModal({
                 type="file"
                 accept="image/*,application/pdf"
                 onChange={handleFileUpload}
-                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                disabled={isCompressing}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer disabled:cursor-wait"
               />
               <div className="flex flex-col items-center pointer-events-none">
-                <Upload className="w-8 h-8 text-teal-700 mb-2" />
-                <span className="text-xs font-semibold text-slate-800">
-                  Click to upload or drag & drop evidence file
-                </span>
-                <span className="text-[11px] text-slate-500 mt-0.5">
-                  PNG, JPG, SVG, WebP up to 15MB
-                </span>
+                {isCompressing ? (
+                  <>
+                    <Loader2 className="w-8 h-8 text-teal-700 mb-2 animate-spin" />
+                    <span className="text-xs font-semibold text-teal-900">
+                      Detecting file weight &amp; compressing for cloud upload...
+                    </span>
+                    <span className="text-[11px] text-slate-500 mt-0.5">
+                      Optimizing resolution while preserving clinical clarity
+                    </span>
+                  </>
+                ) : (
+                  <>
+                    <Upload className="w-8 h-8 text-teal-700 mb-2" />
+                    <span className="text-xs font-semibold text-slate-800">
+                      Click to upload or drag &amp; drop evidence file
+                    </span>
+                    <span className="text-[11px] text-slate-500 mt-0.5">
+                      PNG, JPG, WebP up to 15MB (auto-compressed) · PDF up to 500KB
+                    </span>
+                  </>
+                )}
               </div>
             </div>
 
@@ -271,7 +268,7 @@ export function EvidenceAttachmentModal({
 
           {/* Preview if uploaded */}
           {fileData && (
-            <div className="p-3 bg-slate-100 rounded-xl flex items-center justify-between border border-slate-200">
+            <div className="p-3 bg-slate-100 rounded-xl flex items-center justify-between gap-2 border border-slate-200">
               <div className="flex items-center gap-3 overflow-hidden">
                 <div className="w-12 h-12 rounded-lg bg-white border border-slate-200 flex items-center justify-center shrink-0 overflow-hidden">
                   {fileData.startsWith('data:application/pdf') ? (
@@ -289,9 +286,21 @@ export function EvidenceAttachmentModal({
                 </div>
                 <div className="overflow-hidden">
                   <p className="text-xs font-semibold text-slate-900 truncate">{fileName}</p>
-                  <p className="text-[11px] text-slate-500">
-                    {(fileSize / 1024).toFixed(1)} KB · Ready to link
-                  </p>
+                  {weightInfo?.wasCompressed ? (
+                    <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                      <span className="inline-flex items-center gap-1 text-[11px] font-medium px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-900 border border-emerald-200">
+                        <Shrink className="w-3 h-3 text-emerald-700" />
+                        <span>
+                          {formatFileWeight(weightInfo.originalBytes)} → {formatFileWeight(weightInfo.finalBytes)} ({weightInfo.savedPercent}% lighter)
+                        </span>
+                      </span>
+                      <span className="text-[11px] text-slate-500">· Cloud Ready</span>
+                    </div>
+                  ) : (
+                    <p className="text-[11px] text-slate-500 mt-0.5">
+                      Detected weight: {formatFileWeight(fileSize)} · Ready to link
+                    </p>
+                  )}
                 </div>
               </div>
               <button
@@ -299,8 +308,10 @@ export function EvidenceAttachmentModal({
                 onClick={() => {
                   setFileData(null);
                   setFileName('');
+                  setFileSize(0);
+                  setWeightInfo(null);
                 }}
-                className="text-xs text-rose-600 hover:text-rose-800 px-2 py-1"
+                className="text-xs text-rose-600 hover:text-rose-800 px-2 py-1 shrink-0"
               >
                 Remove
               </button>

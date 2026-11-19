@@ -90,7 +90,10 @@ import {
   registerStaffMemberInFirestore,
   deleteStudentFromFirestoreIfAdmin,
   toFirestoreSafeId,
+  FirestoreOfflineError,
+  reconnectFirestoreNetwork,
 } from './utils/firestoreSync';
+import { isFirestoreOfflineError } from './firebase';
 
 type TabType = 'page1' | 'part1' | 'part2' | 'part3' | 'cohort' | 'ocr' | 'vault';
 
@@ -103,11 +106,32 @@ export default function App() {
   const [currentStudentRosterId, setCurrentStudentRosterId] = useState<string>(() => {
     const list = getStoredCohortStudents();
     const storedInfo = getStoredTraineeInfo();
+    let savedRosterId = '';
+    try {
+      savedRosterId = localStorage.getItem('ncep_current_student_roster_id') || '';
+    } catch {
+      // ignore storage access issues
+    }
+    if (savedRosterId && (savedRosterId.startsWith('student-blank-') || list.some((s) => s.id === savedRosterId))) {
+      return savedRosterId;
+    }
     const matched = storedInfo?.traineeId
       ? list.find((s) => s.traineeInfo?.traineeId === storedInfo.traineeId)
-      : undefined;
+      : storedInfo?.traineeName
+        ? list.find((s) => s.traineeInfo?.traineeName === storedInfo.traineeName)
+        : undefined;
     return matched?.id || list[0]?.id || 'student-1';
   });
+
+  useEffect(() => {
+    try {
+      if (currentStudentRosterId) {
+        localStorage.setItem('ncep_current_student_roster_id', currentStudentRosterId);
+      }
+    } catch {
+      // ignore storage quota errors
+    }
+  }, [currentStudentRosterId]);
   const [activeTab, setActiveTab] = useState<TabType>('part1');
   const [targetSessionForPart2, setTargetSessionForPart2] = useState<number | null>(null);
   const [isManualModalOpen, setIsManualModalOpen] = useState<boolean>(false);
@@ -140,6 +164,8 @@ export default function App() {
   const [isFirestoreStaff, setIsFirestoreStaff] = useState<boolean>(false);
   const [firestoreSaveStatus, setFirestoreSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
   const [firestoreErrorMsg, setFirestoreErrorMsg] = useState<string | null>(null);
+  const [isFirestoreOffline, setIsFirestoreOffline] = useState<boolean>(false);
+  const [isRetryingFirestore, setIsRetryingFirestore] = useState<boolean>(false);
   const [dismissAuthBanner, setDismissAuthBanner] = useState<boolean>(false);
   const firestoreDebounceRef = useRef<any>(null);
 
@@ -167,6 +193,7 @@ export default function App() {
   const hasMountedSyncRef = useRef(false);
   const lastSyncedHashRef = useRef<string>('');
   const lastFirestoreHashRef = useRef<string>('');
+  const lastLocalTraineeEditAtRef = useRef<number>(0);
 
   const computeStudentHash = (student: CohortStudentRecord) => {
     const t = student?.traineeInfo;
@@ -181,7 +208,7 @@ export default function App() {
     const signoffSummary = student?.finalSignoff
       ? `${student.finalSignoff.isCertified ? '1' : '0'}:${student.finalSignoff.verificationHash || ''}`
       : '0';
-    return `${student?.id || ''}_${t?.traineeId || ''}_${t?.traineeName || ''}_${t?.clinicalDepartmentWard || ''}_${t?.assignedClinicalPreceptor || ''}_${t?.studentPin || ''}_${logsCount}_${logsSummary}_${signoffSummary}`;
+    return `${student?.id || ''}_${t?.traineeId || ''}_${t?.traineeName || ''}_${t?.clinicalDepartmentWard || ''}_${t?.assignedClinicalPreceptor || ''}_${t?.trainingPeriodFrom || ''}_${t?.trainingPeriodTo || ''}_${t?.studentPin || ''}_${logsCount}_${logsSummary}_${signoffSummary}`;
   };
 
   // Check URL parameters for direct role links (e.g. ?role=preceptor or ?role=lead_educator or ?tab=cohort)
@@ -243,9 +270,10 @@ export default function App() {
             traineeInfo: traineeInfoRef.current,
             detailedLogs: detailedLogsRef.current,
             finalSignoff: finalSignoffRef.current,
-            updatedAt: new Date().toISOString(),
+            updatedAt: new Date(lastLocalTraineeEditAtRef.current || 0).toISOString(),
           },
-          remoteStudent
+          remoteStudent,
+          { preferLocalTraineeInfo: Date.now() - lastLocalTraineeEditAtRef.current < 15000 }
         );
 
         isRemoteUpdateRef.current = true;
@@ -287,15 +315,19 @@ export default function App() {
           );
 
           if (matchedActive) {
+            const recentlyEditedLocal = Date.now() - lastLocalTraineeEditAtRef.current < 15000;
             const mergedActive = mergeStudentWithRemote(
               {
                 id: activeId || matchedActive.id,
                 traineeInfo: traineeInfoRef.current,
                 detailedLogs: detailedLogsRef.current,
                 finalSignoff: finalSignoffRef.current,
-                updatedAt: new Date().toISOString(),
+                updatedAt: recentlyEditedLocal
+                  ? new Date(lastLocalTraineeEditAtRef.current).toISOString()
+                  : '',
               },
-              matchedActive
+              matchedActive,
+              { preferLocalTraineeInfo: recentlyEditedLocal }
             );
             const currentHash = computeStudentHash({
               id: activeId,
@@ -356,10 +388,62 @@ export default function App() {
     saveStoredCohortStudents(cohortStudents);
   }, [cohortStudents]);
 
-  // Helper: Merge remote Firestore/server student with local logs safely (never lose attached evidence)
+  // Helper: Classify Firestore errors cleanly without exposing raw offline JSON
+  const classifyFirestoreError = (err: unknown): { offline: boolean; message: string } => {
+    if (err instanceof FirestoreOfflineError || isFirestoreOfflineError(err)) {
+      return {
+        offline: true,
+        message:
+          'Cloud database connection is currently offline or paused. Your entries are safely saved locally and on the live server, and will sync to Cloud DB once reconnected.',
+      };
+    }
+    const rawMsg = err instanceof Error ? err.message : String(err || 'Cloud database sync error.');
+    if (rawMsg.toLowerCase().includes('client is offline')) {
+      return {
+        offline: true,
+        message:
+          'Cloud database connection is currently offline or paused. Your entries are safely saved locally and on the live server, and will sync to Cloud DB once reconnected.',
+      };
+    }
+    return { offline: false, message: rawMsg };
+  };
+
+  // Helper: Merge traineeInfo field-by-field so empty remote fields never erase student entries
+  const mergeTraineeInfoSafe = (
+    localInfo: TraineeInformation,
+    remoteInfo: TraineeInformation,
+    preferLocal = false
+  ): TraineeInformation => {
+    const keys: (keyof TraineeInformation)[] = [
+      'traineeName',
+      'traineeId',
+      'clinicalDepartmentWard',
+      'assignedClinicalPreceptor',
+      'trainingPeriodFrom',
+      'trainingPeriodTo',
+      'studentPin',
+    ];
+    const result: TraineeInformation = { ...localInfo };
+    for (const k of keys) {
+      const lVal = typeof localInfo?.[k] === 'string' ? localInfo[k].trim() : '';
+      const rVal = typeof remoteInfo?.[k] === 'string' ? remoteInfo[k].trim() : '';
+      if (preferLocal) {
+        result[k] = (lVal ? localInfo[k] : remoteInfo?.[k] || '') as string;
+      } else {
+        result[k] = (rVal ? remoteInfo[k] : localInfo?.[k] || '') as string;
+      }
+    }
+    if (!result.studentPin) {
+      result.studentPin = localInfo?.studentPin || remoteInfo?.studentPin || '';
+    }
+    return normalizeTraineeInfo(result);
+  };
+
+  // Helper: Merge remote Firestore/server student with local logs safely (never lose attached evidence or trainee info)
   const mergeStudentWithRemote = (
     local: CohortStudentRecord,
-    remote: CohortStudentRecord
+    remote: CohortStudentRecord,
+    options?: { preferLocalTraineeInfo?: boolean }
   ): CohortStudentRecord => {
     const safeLocal = normalizeStudentRecord(local);
     const safeRemote = normalizeStudentRecord(remote);
@@ -370,21 +454,35 @@ export default function App() {
         ? safeRemote.finalSignoff
         : safeLocal.finalSignoff;
 
+    const localTs = Date.parse(safeLocal.updatedAt || '') || 0;
+    const remoteTs = Date.parse(safeRemote.updatedAt || '') || 0;
+    const preferLocalInfo = Boolean(
+      options?.preferLocalTraineeInfo || (localTs > 0 && localTs > remoteTs)
+    );
+
+    const mergedTraineeInfo = mergeTraineeInfoSafe(
+      safeLocal.traineeInfo,
+      safeRemote.traineeInfo,
+      preferLocalInfo
+    );
+    if (!mergedTraineeInfo.studentPin) {
+      mergedTraineeInfo.studentPin = safeLocal.traineeInfo.studentPin || getStudentPin(safeLocal);
+    }
+
     return normalizeStudentRecord({
       ...safeLocal,
       id: safeLocal.id || safeRemote.id,
-      traineeInfo: {
-        ...safeLocal.traineeInfo,
-        ...safeRemote.traineeInfo,
-        studentPin: safeLocal.traineeInfo.studentPin || getStudentPin(safeLocal),
-      },
+      traineeInfo: mergedTraineeInfo,
       detailedLogs: mergedLogs,
       finalSignoff: mergedSignoff,
-      updatedAt: safeRemote.updatedAt || safeLocal.updatedAt,
+      updatedAt:
+        preferLocalInfo && safeLocal.updatedAt
+          ? safeLocal.updatedAt
+          : safeRemote.updatedAt || safeLocal.updatedAt,
     });
   };
 
-  // Helper: Persist a student record to Firestore safely with error reporting
+  // Helper: Persist a student record to Firestore safely with friendly offline reporting
   const persistStudentToFirestore = async (
     record: CohortStudentRecord,
     staffOverride?: boolean
@@ -396,17 +494,24 @@ export default function App() {
 
     setFirestoreSaveStatus('saving');
     setFirestoreErrorMsg(null);
+    setIsFirestoreOffline(false);
     try {
       await saveStudentDossierToFirestore(firebaseUser, record, {
         isStaff: staffOverride ?? (isRootAdmin || isFirestoreStaff),
         claimPin: getStudentPin(record),
       });
       setFirestoreSaveStatus('saved');
+      setIsFirestoreOffline(false);
     } catch (err: any) {
-      const msg = err?.message || 'Failed to save to Firestore.';
+      const classified = classifyFirestoreError(err);
       setFirestoreSaveStatus('error');
-      setFirestoreErrorMsg(msg);
-      console.error('[FirestoreSync] Save failed:', err);
+      setIsFirestoreOffline(classified.offline);
+      setFirestoreErrorMsg(classified.message);
+      if (classified.offline) {
+        console.warn('[FirestoreSync] Client offline during save; local + server backup retained.');
+      } else {
+        console.error('[FirestoreSync] Save failed:', err);
+      }
     }
   };
 
@@ -480,15 +585,19 @@ export default function App() {
           );
 
           if (matchedRemote) {
+            const recentlyEditedLocal = Date.now() - lastLocalTraineeEditAtRef.current < 15000;
             const merged = mergeStudentWithRemote(
               {
                 id: currentStudentRosterIdRef.current,
-                traineeInfo,
+                traineeInfo: traineeInfoRef.current,
                 detailedLogs: detailedLogsRef.current,
-                finalSignoff,
-                updatedAt: new Date().toISOString(),
+                finalSignoff: finalSignoffRef.current,
+                updatedAt: recentlyEditedLocal
+                  ? new Date(lastLocalTraineeEditAtRef.current).toISOString()
+                  : '',
               },
-              matchedRemote
+              matchedRemote,
+              { preferLocalTraineeInfo: recentlyEditedLocal }
             );
             isRemoteUpdateRef.current = true;
             lastSyncedHashRef.current = computeStudentHash(merged);
@@ -499,7 +608,7 @@ export default function App() {
             setTimeout(() => {
               isRemoteUpdateRef.current = false;
             }, 500);
-          } else if (!isRootAdmin && detailedLogsRef.current.length === 0) {
+          } else if (!isRootAdmin && detailedLogsRef.current.length === 0 && !traineeInfoRef.current?.traineeName?.trim()) {
             // If non-admin student signed in on a brand-new device with empty local logs, auto-load their owned dossier
             const firstOwned = remoteStudents[0];
             if (firstOwned) {
@@ -518,13 +627,18 @@ export default function App() {
           }
         }
 
-        // If user already had local unsaved logs on this device before signing in, push them up to Firestore!
-        if (detailedLogsRef.current.length > 0 && !String(currentStudentRosterIdRef.current).startsWith('student-blank-')) {
+        // If user already had local unsaved logs or edited trainee info on this device before signing in, push them up to Firestore!
+        if (
+          !String(currentStudentRosterIdRef.current).startsWith('student-blank-') &&
+          (detailedLogsRef.current.length > 0 ||
+            traineeInfoRef.current?.traineeName?.trim() ||
+            traineeInfoRef.current?.traineeId?.trim())
+        ) {
           const activeRecord: CohortStudentRecord = {
             id: currentStudentRosterIdRef.current,
-            traineeInfo,
+            traineeInfo: traineeInfoRef.current,
             detailedLogs: detailedLogsRef.current,
-            finalSignoff,
+            finalSignoff: finalSignoffRef.current,
             updatedAt: new Date().toISOString(),
           };
           await saveStudentDossierToFirestore(firebaseUser, activeRecord, {
@@ -533,18 +647,29 @@ export default function App() {
           });
         }
 
+        setIsFirestoreOffline(false);
+        setFirestoreErrorMsg(null);
         setFirestoreSaveStatus('saved');
       } catch (err: any) {
         if (!cancelled) {
+          const classified = classifyFirestoreError(err);
           setFirestoreSaveStatus('error');
-          setFirestoreErrorMsg(err?.message || 'Cloud database sync error.');
+          setIsFirestoreOffline(classified.offline);
+          setFirestoreErrorMsg(classified.message);
         }
       }
     };
 
     initFirestoreForUser();
+    const handleOnline = () => {
+      reconnectFirestoreNetwork().then(() => {
+        if (!cancelled) initFirestoreForUser();
+      });
+    };
+    window.addEventListener('online', handleOnline);
     return () => {
       cancelled = true;
+      window.removeEventListener('online', handleOnline);
     };
   }, [authReady, firebaseUser, isRootAdmin]);
 
@@ -1232,6 +1357,120 @@ export default function App() {
     }
   };
 
+  // Handler: Update Trainee Information & retain permanently (including promoting blank-slate trainees)
+  const handleUpdateTraineeInfo = (rawInfo: TraineeInformation) => {
+    const existingPin = traineeInfoRef.current?.studentPin;
+    const normalizedInfo = normalizeTraineeInfo({
+      ...rawInfo,
+      studentPin: rawInfo.studentPin || existingPin,
+    });
+
+    lastLocalTraineeEditAtRef.current = Date.now();
+    const activeLogs = detailedLogsRef.current;
+    const activeSignoff = finalSignoffRef.current;
+    const currentId = currentStudentRosterIdRef.current;
+    const currentCohort = cohortStudentsRef.current;
+    const trimmedTraineeId = normalizedInfo.traineeId.trim();
+    const hasIdentity = Boolean(normalizedInfo.traineeName.trim() || trimmedTraineeId);
+
+    let resolvedId = currentId;
+    let promotedFromBlank = false;
+
+    if (String(currentId || '').startsWith('student-blank-') && hasIdentity) {
+      const existingByTraineeId = trimmedTraineeId
+        ? currentCohort.find(
+            (s) =>
+              (s.traineeInfo?.traineeId || '').trim().toLowerCase() ===
+              trimmedTraineeId.toLowerCase()
+          )
+        : undefined;
+
+      if (existingByTraineeId) {
+        resolvedId = existingByTraineeId.id;
+      } else {
+        resolvedId = `student-enrolled-${Date.now()}`;
+      }
+      promotedFromBlank = true;
+      setCurrentStudentRosterId(resolvedId);
+      setStudentUnlocked(trimmedTraineeId || resolvedId, true);
+    }
+
+    const updatedRecord: CohortStudentRecord = normalizeStudentRecord({
+      id: resolvedId,
+      traineeInfo: normalizedInfo,
+      detailedLogs: activeLogs,
+      finalSignoff: activeSignoff,
+      studentPin: normalizedInfo.studentPin || getStudentPin({
+        id: resolvedId,
+        traineeInfo: normalizedInfo,
+        detailedLogs: activeLogs,
+        finalSignoff: activeSignoff,
+        updatedAt: new Date().toISOString(),
+      }),
+      updatedAt: new Date().toISOString(),
+    });
+
+    saveStoredTraineeInfo(updatedRecord.traineeInfo);
+    traineeInfoRef.current = updatedRecord.traineeInfo;
+    activeTraineeIdRef.current = updatedRecord.traineeInfo.traineeId || '';
+    currentStudentRosterIdRef.current = resolvedId;
+    setTraineeInfo(updatedRecord.traineeInfo);
+
+    // Build updated cohort list & persist locally immediately
+    let nextCohort: CohortStudentRecord[];
+    const matchIdx = currentCohort.findIndex(
+      (s) =>
+        s.id === resolvedId ||
+        (trimmedTraineeId &&
+          (s.traineeInfo?.traineeId || '').trim().toLowerCase() === trimmedTraineeId.toLowerCase())
+    );
+
+    if (matchIdx >= 0) {
+      const existingEntry = normalizeStudentRecord(currentCohort[matchIdx]);
+      const mergedEntry = normalizeStudentRecord({
+        ...existingEntry,
+        id: existingEntry.id,
+        traineeInfo: updatedRecord.traineeInfo,
+        detailedLogs: mergeDetailedLogArrays(existingEntry.detailedLogs, activeLogs),
+        finalSignoff: activeSignoff.isCertified ? activeSignoff : existingEntry.finalSignoff,
+        studentPin: updatedRecord.traineeInfo.studentPin || existingEntry.studentPin,
+        updatedAt: updatedRecord.updatedAt,
+      });
+      resolvedId = mergedEntry.id;
+      updatedRecord.id = mergedEntry.id;
+      updatedRecord.detailedLogs = mergedEntry.detailedLogs;
+      if (promotedFromBlank) {
+        setDetailedLogs(mergedEntry.detailedLogs);
+        setCurrentStudentRosterId(mergedEntry.id);
+      }
+      nextCohort = currentCohort.map((s, i) => (i === matchIdx ? mergedEntry : s));
+    } else if (hasIdentity) {
+      nextCohort = [updatedRecord, ...currentCohort];
+    } else {
+      nextCohort = currentCohort;
+    }
+
+    setCohortStudents(nextCohort);
+    saveStoredCohortStudents(nextCohort);
+
+    if (!String(resolvedId || '').startsWith('student-blank-') && hasIdentity) {
+      const hash = computeStudentHash(updatedRecord);
+      lastSyncedHashRef.current = hash;
+      lastFirestoreHashRef.current = hash;
+
+      cloudSync.syncStudentNow(
+        updatedRecord,
+        userRole === 'preceptor' || userRole === 'lead_educator' ? 'preceptor' : 'trainee',
+        `Updated trainee profile for ${updatedRecord.traineeInfo.traineeName || trimmedTraineeId}`
+      );
+
+      if (firebaseUser && firebaseUser.emailVerified) {
+        if (firestoreDebounceRef.current) clearTimeout(firestoreDebounceRef.current);
+        persistStudentToFirestore(updatedRecord);
+      }
+    }
+  };
+
   // Switch to Part II with specific session
   const handleOpenDetailedLogForSession = (sessionNum: number) => {
     setTargetSessionForPart2(sessionNum);
@@ -1289,8 +1528,9 @@ export default function App() {
           setDetailedLogs(parsed.detailedLogs.map((l: any, i: number) => normalizeDetailedLog(l, i)));
         }
         if (parsed.finalSignoff) setFinalSignoff(normalizeFinalSignoff(parsed.finalSignoff));
-      } catch (err) {
-        alert('Invalid backup JSON file.');
+      } catch {
+        setIsFirestoreOffline(false);
+        setFirestoreErrorMsg('Invalid backup JSON file. Please select a valid NCEP logbook backup (.json).');
       }
     };
     reader.readAsText(file);
@@ -1320,14 +1560,25 @@ export default function App() {
         updatedAt: new Date().toISOString(),
       };
 
+  const handleRetryFirestoreSync = async () => {
+    if (!firebaseUser || !firebaseUser.emailVerified) return;
+    setIsRetryingFirestore(true);
+    try {
+      await reconnectFirestoreNetwork();
+      await persistStudentToFirestore(currentStudentRecord);
+    } finally {
+      setIsRetryingFirestore(false);
+    }
+  };
+
   const handleForceSync = () => {
-    cloudSync.syncStudent(
+    cloudSync.syncStudentNow(
       currentStudentRecord,
       userRole === 'preceptor' || userRole === 'lead_educator' ? 'preceptor' : 'trainee',
       'Manual synchronization requested'
     );
     if (firebaseUser && firebaseUser.emailVerified) {
-      persistStudentToFirestore(currentStudentRecord);
+      reconnectFirestoreNetwork().then(() => persistStudentToFirestore(currentStudentRecord));
     }
   };
 
@@ -1444,11 +1695,21 @@ export default function App() {
                   <span className="font-semibold text-teal-900 hidden md:inline max-w-[150px] truncate" title={firebaseUser.email || ''}>
                     {firebaseUser.email}
                   </span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-bold">
+                  <span
+                    className={`text-[10px] px-1.5 py-0.5 rounded font-bold ${
+                      firestoreSaveStatus === 'error'
+                        ? isFirestoreOffline
+                          ? 'bg-amber-100 text-amber-900'
+                          : 'bg-rose-100 text-rose-800'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
                     {firestoreSaveStatus === 'saving'
                       ? 'Saving...'
                       : firestoreSaveStatus === 'error'
-                        ? 'DB Error'
+                        ? isFirestoreOffline
+                          ? 'Offline Cache'
+                          : 'DB Notice'
                         : 'Cloud DB'}
                   </span>
                   <button
@@ -1598,16 +1859,32 @@ export default function App() {
         {(authError || firestoreErrorMsg || (!firebaseUser && authReady && !dismissAuthBanner)) && (
           <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 pt-4">
             {(authError || firestoreErrorMsg) ? (
-              <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-900 flex items-start justify-between gap-3">
+              <div
+                className={`p-3 rounded-xl text-xs flex items-start justify-between gap-3 border ${
+                  isFirestoreOffline && !authError
+                    ? 'bg-amber-50 border-amber-200 text-amber-950'
+                    : 'bg-rose-50 border-rose-200 text-rose-900'
+                }`}
+              >
                 <div className="flex items-start gap-2">
-                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <AlertCircle
+                    className={`w-4 h-4 shrink-0 mt-0.5 ${
+                      isFirestoreOffline && !authError ? 'text-amber-600' : 'text-rose-600'
+                    }`}
+                  />
                   <div className="space-y-1">
                     <div className="font-semibold">
                       {String(firestoreErrorMsg || authError).includes('Quota exceeded')
                         ? 'Firestore Daily Free-Tier Quota Exceeded (resets tomorrow).'
-                        : 'Cloud Database Notice'}
+                        : isFirestoreOffline && !authError
+                          ? 'Cloud Database Offline — Saved Locally'
+                          : 'Cloud Database Notice'}
                     </div>
-                    <div className="text-[11px] text-rose-800 break-words">
+                    <div
+                      className={`text-[11px] break-words ${
+                        isFirestoreOffline && !authError ? 'text-amber-900' : 'text-rose-800'
+                      }`}
+                    >
                       {String(firestoreErrorMsg || authError).includes(
                         "Quota exceeded for quota metric 'Free daily read units per project (free tier database)'"
                       ) ? (
@@ -1628,16 +1905,31 @@ export default function App() {
                     </div>
                   </div>
                 </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    clearAuthError();
-                    setFirestoreErrorMsg(null);
-                  }}
-                  className="text-[11px] font-semibold text-rose-700 hover:underline shrink-0"
-                >
-                  Dismiss
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  {firebaseUser && isFirestoreOffline && (
+                    <button
+                      type="button"
+                      onClick={handleRetryFirestoreSync}
+                      disabled={isRetryingFirestore}
+                      className="px-2.5 py-1 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white rounded-lg text-[11px] font-semibold transition-colors"
+                    >
+                      {isRetryingFirestore ? 'Retrying...' : 'Retry Sync'}
+                    </button>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => {
+                      clearAuthError();
+                      setFirestoreErrorMsg(null);
+                      setIsFirestoreOffline(false);
+                    }}
+                    className={`text-[11px] font-semibold hover:underline ${
+                      isFirestoreOffline && !authError ? 'text-amber-800' : 'text-rose-700'
+                    }`}
+                  >
+                    Dismiss
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="p-3 bg-teal-50/90 border border-teal-200 rounded-xl text-xs text-teal-950 flex flex-wrap items-center justify-between gap-3">
@@ -1723,7 +2015,7 @@ export default function App() {
           {activeTab === 'page1' && (
             <TraineeInfoAndInstructions
               traineeInfo={traineeInfo}
-              onUpdateTraineeInfo={(info) => setTraineeInfo(info)}
+              onUpdateTraineeInfo={handleUpdateTraineeInfo}
               completedSessionsCount={metCount}
               totalSessionsCount={NCEP_SESSIONS_DEFINITIONS.length}
               onResetToBlank={handleResetToBlank}
