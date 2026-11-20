@@ -77,6 +77,10 @@ import { StudentChangePinModal } from './components/StudentChangePinModal';
 import { ShareAccessModal } from './components/ShareAccessModal';
 import { cloudSync } from './utils/cloudSync';
 import { CloudSyncIndicator } from './components/CloudSyncIndicator';
+import {
+  CloudSaveStatusModal,
+  CloudSavePopupState,
+} from './components/CloudSaveStatusModal';
 import { useFirebaseAuth } from './contexts/FirebaseContext';
 import {
   ensureUserDocuments,
@@ -167,7 +171,20 @@ export default function App() {
   const [isFirestoreOffline, setIsFirestoreOffline] = useState<boolean>(false);
   const [isRetryingFirestore, setIsRetryingFirestore] = useState<boolean>(false);
   const [dismissAuthBanner, setDismissAuthBanner] = useState<boolean>(false);
+  const [cloudSavePopup, setCloudSavePopup] = useState<CloudSavePopupState | null>(null);
+  const [isRetryingCloudPopup, setIsRetryingCloudPopup] = useState<boolean>(false);
   const firestoreDebounceRef = useRef<any>(null);
+  const inlineStaffCredentialRef = useRef<{ preceptor: RegisteredPreceptor; enteredPin: string } | null>(null);
+  const pendingCloudRetryRef = useRef<{
+    record: CohortStudentRecord;
+    actionTitle: string;
+    roleSource: 'trainee' | 'preceptor';
+    roleLabel: CloudSavePopupState['roleLabel'];
+    evaluatorName?: string;
+    isStaffAction?: boolean;
+    inlineStaff?: { preceptor: RegisteredPreceptor; enteredPin: string } | null;
+  } | null>(null);
+  const retryPopupAfterGoogleAuthRef = useRef<boolean>(false);
 
   // Stable refs to access current values inside one-time cloudSync subscription without re-subscribing
   const currentStudentRosterIdRef = useRef(currentStudentRosterId);
@@ -482,6 +499,76 @@ export default function App() {
     });
   };
 
+  // Helper: Parse Firestore / Cloud error into clear human-readable text & category
+  const parseCloudErrorForPopup = (
+    err: unknown
+  ): { isConnection: boolean; message: string } => {
+    if (
+      err instanceof FirestoreOfflineError ||
+      isFirestoreOfflineError(err) ||
+      (typeof navigator !== 'undefined' && navigator.onLine === false)
+    ) {
+      return {
+        isConnection: true,
+        message:
+          err instanceof Error && err.message
+            ? err.message
+            : 'Cloud database connection is currently offline or unreachable.',
+      };
+    }
+
+    const raw = err instanceof Error ? err.message : String(err || 'Unknown Cloud DB error.');
+    let extracted = raw;
+    if (raw.trim().startsWith('{')) {
+      try {
+        const parsed = JSON.parse(raw);
+        if (parsed?.error) {
+          extracted = String(parsed.error);
+        }
+      } catch {
+        // leave extracted as raw
+      }
+    }
+
+    const lower = extracted.toLowerCase();
+    if (
+      lower.includes('client is offline') ||
+      lower.includes('network') ||
+      lower.includes('unavailable') ||
+      lower.includes('failed to fetch')
+    ) {
+      return {
+        isConnection: true,
+        message: 'Network or Cloud Database server is temporarily unreachable.',
+      };
+    }
+    if (lower.includes('permission-denied') || lower.includes('insufficient permissions')) {
+      return {
+        isConnection: false,
+        message:
+          'Permission Denied by Cloud Database security rules. Ensure you are signed in with the assigned Google account or have verified Preceptor/Mentor PIN permissions.',
+      };
+    }
+    if (lower.includes('quota exceeded') || lower.includes('resource-exhausted')) {
+      return {
+        isConnection: false,
+        message:
+          'Daily free-tier Cloud Database quota has been exceeded. Data could not be written to Cloud DB today.',
+      };
+    }
+    if (lower.includes('unauthenticated')) {
+      return {
+        isConnection: false,
+        message: 'Google authentication session expired. Please sign in again.',
+      };
+    }
+
+    return {
+      isConnection: false,
+      message: extracted,
+    };
+  };
+
   // Helper: Persist a student record to Firestore safely with friendly offline reporting
   const persistStudentToFirestore = async (
     record: CohortStudentRecord,
@@ -511,6 +598,206 @@ export default function App() {
         console.warn('[FirestoreSync] Client offline during save; local + server backup retained.');
       } else {
         console.error('[FirestoreSync] Save failed:', err);
+      }
+    }
+  };
+
+  // Explicit verified save + pop-up confirmation for Student Log Entries & Preceptor/Mentor Sign-Offs
+  const saveAndConfirmStudentToCloud = async (params: {
+    record: CohortStudentRecord;
+    actionTitle: string;
+    roleSource: 'trainee' | 'preceptor';
+    roleLabel: CloudSavePopupState['roleLabel'];
+    evaluatorName?: string;
+    isStaffAction?: boolean;
+    inlineStaff?: { preceptor: RegisteredPreceptor; enteredPin: string } | null;
+  }) => {
+    const {
+      record,
+      actionTitle,
+      roleSource,
+      roleLabel,
+      evaluatorName,
+      isStaffAction,
+      inlineStaff,
+    } = params;
+
+    const studentName = record.traineeInfo?.traineeName?.trim() || '';
+    const studentId = record.traineeInfo?.traineeId?.trim() || '';
+    const safeId = toFirestoreSafeId(record.id, 'student');
+
+    if (firestoreDebounceRef.current) {
+      clearTimeout(firestoreDebounceRef.current);
+      firestoreDebounceRef.current = null;
+    }
+
+    // Cannot permanently store logs on a blank unnamed profile in Cloud DB
+    if (safeId.startsWith('student-blank-') || (!studentName && !studentId)) {
+      setCloudSavePopup({
+        status: 'other_error',
+        actionTitle,
+        roleLabel,
+        studentName: studentName || 'Unnamed Trainee',
+        studentId: studentId || 'Missing ID',
+        evaluatorName,
+        canRetry: false,
+        detailMessage:
+          'Trainee Name & ID are missing. Open Tab 1 (Trainee Info & Instructions), enter your Trainee Name and Trainee ID first, then save your log again so it can be stored under your official dossier in the Cloud Database.',
+      });
+      return;
+    }
+
+    pendingCloudRetryRef.current = params;
+
+    // Show "Saving..." state while awaiting permanent confirmation
+    setCloudSavePopup({
+      status: 'saving',
+      actionTitle,
+      roleLabel,
+      studentName,
+      studentId,
+      evaluatorName,
+    });
+
+    // Fail fast if browser explicitly reports offline
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setIsFirestoreOffline(true);
+      setFirestoreSaveStatus('error');
+      setFirestoreErrorMsg('Device is offline. Entry saved locally only.');
+      setCloudSavePopup({
+        status: 'connection_error',
+        actionTitle,
+        roleLabel,
+        studentName,
+        studentId,
+        evaluatorName,
+        liveServerSaved: false,
+        cloudDbSaved: false,
+        detailMessage: 'Your device currently has no internet connection (offline).',
+      });
+      return;
+    }
+
+    // Prevent background debounced double-save for the exact same state hash
+    const hash = computeStudentHash(record);
+    lastSyncedHashRef.current = hash;
+    lastFirestoreHashRef.current = hash;
+
+    // 1. Live Server Save (/api/sync/student)
+    const liveSyncResult = await cloudSync.syncStudentNow(
+      record,
+      roleSource,
+      `${actionTitle} (${studentName || studentId})`
+    );
+
+    // 2. Check Google Cloud Auth before attempting Firestore commit
+    if (!firebaseUser || !firebaseUser.emailVerified) {
+      if (!liveSyncResult.ok && liveSyncResult.offline) {
+        setCloudSavePopup({
+          status: 'connection_error',
+          actionTitle,
+          roleLabel,
+          studentName,
+          studentId,
+          evaluatorName,
+          liveServerSaved: false,
+          cloudDbSaved: false,
+          detailMessage:
+            liveSyncResult.error ||
+            'Could not connect to the live sync server or Cloud Database.',
+        });
+        return;
+      }
+
+      setCloudSavePopup({
+        status: 'auth_required',
+        actionTitle,
+        roleLabel,
+        studentName,
+        studentId,
+        evaluatorName,
+        liveServerSaved: liveSyncResult.ok,
+        cloudDbSaved: false,
+        detailMessage: liveSyncResult.ok
+          ? undefined
+          : liveSyncResult.error,
+      });
+      return;
+    }
+
+    // 3. Permanent Cloud Firestore Commit + waitForPendingWrites verification
+    setFirestoreSaveStatus('saving');
+    setFirestoreErrorMsg(null);
+    setIsFirestoreOffline(false);
+
+    try {
+      const effectiveStaffCred = inlineStaff || inlineStaffCredentialRef.current;
+      let staffElevated = Boolean(isStaffAction || isRootAdmin || isFirestoreStaff);
+
+      if (effectiveStaffCred?.preceptor && effectiveStaffCred?.enteredPin) {
+        await registerStaffMemberInFirestore(
+          firebaseUser,
+          effectiveStaffCred.preceptor,
+          effectiveStaffCred.enteredPin
+        );
+        setIsFirestoreStaff(true);
+        staffElevated = true;
+      }
+
+      await saveStudentDossierToFirestore(firebaseUser, record, {
+        isStaff: staffElevated,
+        claimPin: getStudentPin(record),
+      });
+
+      setFirestoreSaveStatus('saved');
+      setIsFirestoreOffline(false);
+      setFirestoreErrorMsg(null);
+
+      // ONLY now show permanent confirmation pop-up!
+      setCloudSavePopup({
+        status: 'saved',
+        actionTitle,
+        roleLabel,
+        studentName,
+        studentId,
+        evaluatorName,
+        savedAtIso: new Date().toISOString(),
+        liveServerSaved: liveSyncResult.ok,
+        cloudDbSaved: true,
+      });
+    } catch (err: unknown) {
+      const parsed = parseCloudErrorForPopup(err);
+      const classified = classifyFirestoreError(err);
+
+      setFirestoreSaveStatus('error');
+      setIsFirestoreOffline(parsed.isConnection || classified.offline);
+      setFirestoreErrorMsg(classified.message);
+
+      if (parsed.isConnection || classified.offline) {
+        setCloudSavePopup({
+          status: 'connection_error',
+          actionTitle,
+          roleLabel,
+          studentName,
+          studentId,
+          evaluatorName,
+          liveServerSaved: liveSyncResult.ok,
+          cloudDbSaved: false,
+          detailMessage: parsed.message,
+        });
+      } else {
+        setCloudSavePopup({
+          status: 'other_error',
+          actionTitle,
+          roleLabel,
+          studentName,
+          studentId,
+          evaluatorName,
+          liveServerSaved: liveSyncResult.ok,
+          cloudDbSaved: false,
+          canRetry: true,
+          detailMessage: parsed.message,
+        });
       }
     }
   };
@@ -650,6 +937,16 @@ export default function App() {
         setIsFirestoreOffline(false);
         setFirestoreErrorMsg(null);
         setFirestoreSaveStatus('saved');
+
+        if (retryPopupAfterGoogleAuthRef.current && pendingCloudRetryRef.current && !cancelled) {
+          retryPopupAfterGoogleAuthRef.current = false;
+          const pending = pendingCloudRetryRef.current;
+          // Re-run verified cloud save now that Google auth is initialized
+          saveAndConfirmStudentToCloud({
+            ...pending,
+            isStaffAction: pending.isStaffAction || isRootAdmin || staffVerified,
+          });
+        }
       } catch (err: any) {
         if (!cancelled) {
           const classified = classifyFirestoreError(err);
@@ -1141,87 +1438,146 @@ export default function App() {
     );
   };
 
+  // Helper: Record inline staff/preceptor PIN verification for Part I/II/III Cloud DB writes
+  const handleInlineStaffAuthenticated = (preceptor?: RegisteredPreceptor, enteredPin?: string) => {
+    if (preceptor && enteredPin) {
+      inlineStaffCredentialRef.current = { preceptor, enteredPin };
+      if (firebaseUser && firebaseUser.emailVerified) {
+        registerStaffMemberInFirestore(firebaseUser, preceptor, enteredPin)
+          .then(() => setIsFirestoreStaff(true))
+          .catch((err) => {
+            console.warn('[FirestoreSync] Inline staff verification note:', err?.message || err);
+          });
+      }
+    }
+  };
+
   // Preceptor Quick Status Sign-Off from Part I Tracking Matrix
   const handleQuickPreceptorSignFromMatrix = (
     sessionNumber: number,
     newStatus: 'Met' | 'Pending',
-    preceptor?: RegisteredPreceptor
+    preceptor?: RegisteredPreceptor,
+    enteredPin?: string
   ) => {
     const today = new Date().toISOString().slice(0, 10);
-    const effectiveName = preceptor
-      ? preceptor.name
-      : traineeInfo.assignedClinicalPreceptor || 'Abaynesh Mekonnen';
-    const effectiveInitials = preceptor
-      ? preceptor.initials
+    const activePreceptor = preceptor || authenticatedPreceptor || undefined;
+    const inlineStaff =
+      activePreceptor && enteredPin ? { preceptor: activePreceptor, enteredPin } : null;
+    if (inlineStaff) {
+      inlineStaffCredentialRef.current = inlineStaff;
+    }
+
+    const effectiveName = activePreceptor
+      ? activePreceptor.name
+      : traineeInfo.assignedClinicalPreceptor || 'Clinical Preceptor';
+    const effectiveInitials = activePreceptor
+      ? activePreceptor.initials
       : effectiveName
           .split(' ')
           .filter((w: string) => w.length > 0 && !w.includes('.') && !w.includes(','))
           .map((w: string) => w[0])
           .join('')
           .slice(0, 3)
-          .toUpperCase() || 'AM';
+          .toUpperCase() || 'CP';
 
-    const defaultComment = preceptor
-      ? `Competency demonstrated and validated by ${preceptor.name} (${preceptor.title} · ${preceptor.wardDepartment}).`
+    const defaultComment = activePreceptor
+      ? `Competency demonstrated and validated by ${activePreceptor.name} (${activePreceptor.title} · ${activePreceptor.wardDepartment}).`
       : 'Competency evaluated and validated by preceptor.';
 
-    setDetailedLogs((prev) => {
-      const existingIdx = prev.findIndex((l) => l.sessionNumber === sessionNumber);
-      if (existingIdx >= 0) {
-        const copy = [...prev];
-        const current = copy[existingIdx];
-        copy[existingIdx] = {
-          ...current,
-          status: newStatus,
-          dateOfActivity: current.dateOfActivity || today,
-          preceptorSignoff:
-            newStatus === 'Met'
-              ? {
-                  isSigned: true,
-                  preceptorName: effectiveName,
-                  preceptorInitials: effectiveInitials,
-                  competencyDemonstrated: 'Satisfactory',
-                  comments: current.preceptorSignoff?.comments || defaultComment,
-                  dateSigned: today,
-                }
-              : undefined,
-        };
-        return copy;
-      } else {
-        const sessionDef = NCEP_SESSIONS_DEFINITIONS.find((s) => s.sessionNumber === sessionNumber);
-        const newLog: DetailedActivityLogSheet = {
-          id: `log-matrix-${sessionNumber}-${Date.now()}`,
-          sessionNumber,
-          sessionTitle: sessionDef?.sessionTitle || `Session ${sessionNumber}`,
-          subCompetencyId: sessionDef?.subCompetencyId || 'sub_comp_1',
-          subCompetencyTitle: sessionDef?.subCompetencyTitle || '',
-          dateOfActivity: today,
-          durationHours: 4,
-          clinicalSettingWard: preceptor?.wardDepartment || traineeInfo.clinicalDepartmentWard || 'Clinical Ward',
-          activityDescription: `Completed required clinical activity for Session ${sessionNumber}: ${sessionDef?.requiredActivity || ''}`,
-          reflectiveNotesLessonsLearned: `Demonstrated clinical judgment, followed protocols and integrated patient-centered care.`,
-          attachments: [],
-          status: newStatus,
-          source: 'manual',
-          createdAt: today,
-          preceptorSignoff:
-            newStatus === 'Met'
-              ? {
-                  isSigned: true,
-                  preceptorName: effectiveName,
-                  preceptorInitials: effectiveInitials,
-                  competencyDemonstrated: 'Satisfactory',
-                  comments: defaultComment,
-                  dateSigned: today,
-                }
-              : undefined,
-        };
-        return [newLog, ...prev];
-      }
+    const prevLogs = detailedLogsRef.current;
+    const existingIdx = prevLogs.findIndex((l) => l.sessionNumber === sessionNumber);
+    let updatedLogs: DetailedActivityLogSheet[];
+
+    if (existingIdx >= 0) {
+      const copy = [...prevLogs];
+      const current = copy[existingIdx];
+      copy[existingIdx] = {
+        ...current,
+        status: newStatus,
+        dateOfActivity: current.dateOfActivity || today,
+        preceptorSignoff:
+          newStatus === 'Met'
+            ? {
+                isSigned: true,
+                preceptorName: effectiveName,
+                preceptorInitials: effectiveInitials,
+                competencyDemonstrated: 'Satisfactory',
+                comments: current.preceptorSignoff?.comments || defaultComment,
+                dateSigned: today,
+              }
+            : undefined,
+      };
+      updatedLogs = copy;
+    } else {
+      const sessionDef = NCEP_SESSIONS_DEFINITIONS.find((s) => s.sessionNumber === sessionNumber);
+      const newLog: DetailedActivityLogSheet = {
+        id: `log-matrix-${sessionNumber}-${Date.now()}`,
+        sessionNumber,
+        sessionTitle: sessionDef?.sessionTitle || `Session ${sessionNumber}`,
+        subCompetencyId: sessionDef?.subCompetencyId || 'sub_comp_1',
+        subCompetencyTitle: sessionDef?.subCompetencyTitle || '',
+        dateOfActivity: today,
+        durationHours: 4,
+        clinicalSettingWard:
+          activePreceptor?.wardDepartment || traineeInfo.clinicalDepartmentWard || 'Clinical Ward',
+        activityDescription: `Completed required clinical activity for Session ${sessionNumber}: ${sessionDef?.requiredActivity || ''}`,
+        reflectiveNotesLessonsLearned: `Demonstrated clinical judgment, followed protocols and integrated patient-centered care.`,
+        attachments: [],
+        status: newStatus,
+        source: 'manual',
+        createdAt: today,
+        preceptorSignoff:
+          newStatus === 'Met'
+            ? {
+                isSigned: true,
+                preceptorName: effectiveName,
+                preceptorInitials: effectiveInitials,
+                competencyDemonstrated: 'Satisfactory',
+                comments: defaultComment,
+                dateSigned: today,
+              }
+            : undefined,
+      };
+      updatedLogs = [newLog, ...prevLogs];
+    }
+
+    const updatedRecord: CohortStudentRecord = normalizeStudentRecord({
+      id: currentStudentRosterId,
+      traineeInfo,
+      detailedLogs: updatedLogs,
+      finalSignoff,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const preHash = computeStudentHash(updatedRecord);
+    lastSyncedHashRef.current = preHash;
+    lastFirestoreHashRef.current = preHash;
+    detailedLogsRef.current = updatedLogs;
+    setDetailedLogs(updatedLogs);
+    setCohortStudents((prev) =>
+      prev.map((s) =>
+        s.id === currentStudentRosterId ||
+        (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)
+          ? { ...s, detailedLogs: updatedLogs, updatedAt: updatedRecord.updatedAt }
+          : s
+      )
+    );
+
+    saveAndConfirmStudentToCloud({
+      record: updatedRecord,
+      actionTitle:
+        newStatus === 'Met'
+          ? `Preceptor Sign-Off Verified (Session ${sessionNumber} · Met)`
+          : `Preceptor Status Updated (Session ${sessionNumber} · Pending)`,
+      roleSource: 'preceptor',
+      roleLabel: userRole === 'lead_educator' ? 'Lead Clinical Educator' : 'Clinical Preceptor / Mentor',
+      evaluatorName: newStatus === 'Met' ? effectiveName : undefined,
+      isStaffAction: true,
+      inlineStaff,
     });
   };
 
-  // Handler: Save or update detailed log sheet (flush immediately to server sync & Firestore)
+  // Handler: Save or update detailed log sheet (flush immediately & confirm permanent Cloud DB write)
   const handleSaveLogSheet = (newLog: DetailedActivityLogSheet) => {
     const prevLogs = detailedLogsRef.current;
     const idx = prevLogs.findIndex((l) => l.id === newLog.id || l.sessionNumber === newLog.sessionNumber);
@@ -1230,47 +1586,108 @@ export default function App() {
         ? prevLogs.map((item, i) => (i === idx ? newLog : item))
         : [newLog, ...prevLogs];
 
+    const updatedRecord: CohortStudentRecord = normalizeStudentRecord({
+      id: currentStudentRosterId,
+      traineeInfo,
+      detailedLogs: updatedLogs,
+      finalSignoff,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const preHash = computeStudentHash(updatedRecord);
+    lastSyncedHashRef.current = preHash;
+    lastFirestoreHashRef.current = preHash;
+    detailedLogsRef.current = updatedLogs;
     setDetailedLogs(updatedLogs);
+    setCohortStudents((prev) =>
+      prev.map((s) =>
+        s.id === currentStudentRosterId ||
+        (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)
+          ? { ...s, detailedLogs: updatedLogs, updatedAt: updatedRecord.updatedAt }
+          : s
+      )
+    );
 
-    if (
-      !String(currentStudentRosterId || '').startsWith('student-blank-') &&
-      (traineeInfo?.traineeId?.trim() || traineeInfo?.traineeName?.trim())
-    ) {
-      const updatedRecord: CohortStudentRecord = {
-        id: currentStudentRosterId,
-        traineeInfo,
-        detailedLogs: updatedLogs,
-        finalSignoff,
-        updatedAt: new Date().toISOString(),
-      };
-      const isStaffRole = userRole === 'preceptor' || userRole === 'lead_educator';
-      cloudSync.syncStudentNow(
-        updatedRecord,
-        isStaffRole ? 'preceptor' : 'trainee',
-        `Saved Session ${newLog.sessionNumber} log sheet for ${traineeInfo.traineeName || 'Trainee'}`
-      );
-    }
-  };
+    const existingBeforeSave = idx >= 0 ? prevLogs[idx] : undefined;
+    const isPreceptorSigningAction = Boolean(
+      newLog.preceptorSignoff?.isSigned &&
+        (!existingBeforeSave?.preceptorSignoff?.isSigned ||
+          existingBeforeSave.preceptorSignoff.dateSigned !== newLog.preceptorSignoff.dateSigned ||
+          existingBeforeSave.preceptorSignoff.preceptorName !== newLog.preceptorSignoff.preceptorName ||
+          userRole !== 'trainee')
+    );
 
-  // Handler: Import logs from OCR
-  const handleImportOcrLogs = (newLogs: DetailedActivityLogSheet[]) => {
-    setDetailedLogs((prev) => {
-      const updated = [...prev];
-      newLogs.forEach((nl) => {
-        const idx = updated.findIndex((l) => l.sessionNumber === nl.sessionNumber);
-        if (idx >= 0) {
-          updated[idx] = nl;
-        } else {
-          updated.push(nl);
-        }
-      });
-      return updated;
+    saveAndConfirmStudentToCloud({
+      record: updatedRecord,
+      actionTitle: isPreceptorSigningAction
+        ? `Preceptor Sign-Off Saved (Session ${newLog.sessionNumber} · ${newLog.status})`
+        : `Session ${newLog.sessionNumber} Clinical Activity Log Saved`,
+      roleSource: isPreceptorSigningAction || userRole !== 'trainee' ? 'preceptor' : 'trainee',
+      roleLabel:
+        userRole === 'lead_educator'
+          ? 'Lead Clinical Educator'
+          : isPreceptorSigningAction || userRole === 'preceptor'
+            ? 'Clinical Preceptor / Mentor'
+            : 'Student / Trainee',
+      evaluatorName: isPreceptorSigningAction ? newLog.preceptorSignoff?.preceptorName : undefined,
+      isStaffAction: isPreceptorSigningAction || userRole !== 'trainee',
+      inlineStaff: isPreceptorSigningAction ? inlineStaffCredentialRef.current : null,
     });
   };
 
-  // Handler: Add attachment to log (immediately persisted across server & Firestore)
+  // Handler: Import logs from OCR (immediately confirm Cloud DB save)
+  const handleImportOcrLogs = (newLogs: DetailedActivityLogSheet[]) => {
+    const updatedLogs = [...detailedLogsRef.current];
+    newLogs.forEach((nl) => {
+      const idx = updatedLogs.findIndex((l) => l.sessionNumber === nl.sessionNumber);
+      if (idx >= 0) {
+        updatedLogs[idx] = nl;
+      } else {
+        updatedLogs.push(nl);
+      }
+    });
+
+    const updatedRecord: CohortStudentRecord = normalizeStudentRecord({
+      id: currentStudentRosterId,
+      traineeInfo,
+      detailedLogs: updatedLogs,
+      finalSignoff,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const preHash = computeStudentHash(updatedRecord);
+    lastSyncedHashRef.current = preHash;
+    lastFirestoreHashRef.current = preHash;
+    detailedLogsRef.current = updatedLogs;
+    setDetailedLogs(updatedLogs);
+    setCohortStudents((prev) =>
+      prev.map((s) =>
+        s.id === currentStudentRosterId ||
+        (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)
+          ? { ...s, detailedLogs: updatedLogs, updatedAt: updatedRecord.updatedAt }
+          : s
+      )
+    );
+
+    const isStaffRole = userRole === 'preceptor' || userRole === 'lead_educator';
+    saveAndConfirmStudentToCloud({
+      record: updatedRecord,
+      actionTitle: `Imported ${newLogs.length} OCR Clinical Log Sheet${newLogs.length === 1 ? '' : 's'}`,
+      roleSource: isStaffRole ? 'preceptor' : 'trainee',
+      roleLabel:
+        userRole === 'lead_educator'
+          ? 'Lead Clinical Educator'
+          : isStaffRole
+            ? 'Clinical Preceptor / Mentor'
+            : 'Student / Trainee',
+      isStaffAction: isStaffRole,
+    });
+  };
+
+  // Handler: Add attachment to log (immediately persisted & confirmed in Cloud DB)
   const handleAddAttachmentToLog = (logId: string, attachment: EvidenceAttachment) => {
     const prevLogs = detailedLogsRef.current;
+    const targetLog = prevLogs.find((l) => l.id === logId);
     const updatedLogs = prevLogs.map((l) => {
       if (l.id !== logId) return l;
       const nextRemoved = (l.removedAttachmentIds || []).filter((id) => id !== attachment.id);
@@ -1281,25 +1698,75 @@ export default function App() {
       };
     });
 
-    setDetailedLogs(updatedLogs);
+    const updatedRecord: CohortStudentRecord = normalizeStudentRecord({
+      id: currentStudentRosterId,
+      traineeInfo,
+      detailedLogs: updatedLogs,
+      finalSignoff,
+      updatedAt: new Date().toISOString(),
+    });
 
-    if (
-      !String(currentStudentRosterId || '').startsWith('student-blank-') &&
-      (traineeInfo?.traineeId?.trim() || traineeInfo?.traineeName?.trim())
-    ) {
-      const updatedRecord: CohortStudentRecord = {
-        id: currentStudentRosterId,
-        traineeInfo,
-        detailedLogs: updatedLogs,
-        finalSignoff,
-        updatedAt: new Date().toISOString(),
-      };
-      cloudSync.syncStudentNow(
-        updatedRecord,
-        userRole === 'trainee' ? 'trainee' : 'preceptor',
-        `Attached supporting evidence (${attachment.name}) for ${traineeInfo.traineeName || 'Trainee'}`
-      );
-    }
+    const preHash = computeStudentHash(updatedRecord);
+    lastSyncedHashRef.current = preHash;
+    lastFirestoreHashRef.current = preHash;
+    detailedLogsRef.current = updatedLogs;
+    setDetailedLogs(updatedLogs);
+    setCohortStudents((prev) =>
+      prev.map((s) =>
+        s.id === currentStudentRosterId ||
+        (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)
+          ? { ...s, detailedLogs: updatedLogs, updatedAt: updatedRecord.updatedAt }
+          : s
+      )
+    );
+
+    saveAndConfirmStudentToCloud({
+      record: updatedRecord,
+      actionTitle: `Evidence Attached to Session ${targetLog?.sessionNumber || ''} (${attachment.name})`.trim(),
+      roleSource: userRole === 'trainee' ? 'trainee' : 'preceptor',
+      roleLabel:
+        userRole === 'lead_educator'
+          ? 'Lead Clinical Educator'
+          : userRole === 'preceptor'
+            ? 'Clinical Preceptor / Mentor'
+            : 'Student / Trainee',
+      isStaffAction: userRole !== 'trainee',
+    });
+  };
+
+  // Handler: Lead Clinical Educator Part III Final Certification Sign-Off
+  const handleUpdateFinalSignoff = (updatedSignoff: FinalCompetencySignoff) => {
+    const updatedRecord: CohortStudentRecord = normalizeStudentRecord({
+      id: currentStudentRosterId,
+      traineeInfo,
+      detailedLogs: detailedLogsRef.current,
+      finalSignoff: updatedSignoff,
+      updatedAt: new Date().toISOString(),
+    });
+
+    const preHash = computeStudentHash(updatedRecord);
+    lastSyncedHashRef.current = preHash;
+    lastFirestoreHashRef.current = preHash;
+    finalSignoffRef.current = updatedSignoff;
+    setFinalSignoff(updatedSignoff);
+    setCohortStudents((prev) =>
+      prev.map((s) =>
+        s.id === currentStudentRosterId ||
+        (traineeInfo?.traineeId && s.traineeInfo?.traineeId === traineeInfo.traineeId)
+          ? { ...s, finalSignoff: updatedSignoff, updatedAt: updatedRecord.updatedAt }
+          : s
+      )
+    );
+
+    saveAndConfirmStudentToCloud({
+      record: updatedRecord,
+      actionTitle: 'Part III Final Competency Certification Signed',
+      roleSource: 'preceptor',
+      roleLabel: 'Lead Clinical Educator',
+      evaluatorName: updatedSignoff.leadEducatorName,
+      isStaffAction: true,
+      inlineStaff: inlineStaffCredentialRef.current,
+    });
   };
 
   // Handler: Remove attachment from log (STRICTLY restricted to student / trainee only)
@@ -2052,6 +2519,7 @@ export default function App() {
               onSaveLog={handleSaveLogSheet}
               onAddAttachmentToLog={handleAddAttachmentToLog}
               onRemoveAttachmentFromLog={handleRemoveAttachmentFromLog}
+              onStaffAuthenticated={handleInlineStaffAuthenticated}
               activeSessionToOpen={targetSessionForPart2}
               onClearActiveSession={() => setTargetSessionForPart2(null)}
               userRole={userRole}
@@ -2065,7 +2533,8 @@ export default function App() {
               traineeInfo={traineeInfo}
               detailedLogs={detailedLogs}
               finalSignoff={finalSignoff}
-              onUpdateFinalSignoff={(s) => setFinalSignoff(s)}
+              onUpdateFinalSignoff={handleUpdateFinalSignoff}
+              onStaffAuthenticated={handleInlineStaffAuthenticated}
               userRole={userRole}
             />
           )}
@@ -2179,6 +2648,29 @@ export default function App() {
         traineeInfo={traineeInfo}
         onClose={() => setIsChangePinModalOpen(false)}
         onPinChanged={handlePinChangedSuccess}
+      />
+
+      {/* Explicit Cloud Database Save Confirmation / Connection & Error Pop-Up */}
+      <CloudSaveStatusModal
+        state={cloudSavePopup}
+        isRetrying={isRetryingCloudPopup}
+        isSigningIn={isSigningIn}
+        onClose={() => setCloudSavePopup(null)}
+        onRetry={async () => {
+          const pending = pendingCloudRetryRef.current;
+          if (!pending) return;
+          setIsRetryingCloudPopup(true);
+          try {
+            await reconnectFirestoreNetwork();
+            await saveAndConfirmStudentToCloud(pending);
+          } finally {
+            setIsRetryingCloudPopup(false);
+          }
+        }}
+        onSignInGoogle={async () => {
+          retryPopupAfterGoogleAuthRef.current = true;
+          await signInWithGoogle();
+        }}
       />
     </div>
   );

@@ -36,6 +36,7 @@ interface PartIIDetailedLogSheetsProps {
   onSaveLog: (log: DetailedActivityLogSheet) => void;
   onAddAttachmentToLog: (logId: string, attachment: EvidenceAttachment) => void;
   onRemoveAttachmentFromLog?: (logId: string, attachmentId: string) => void;
+  onStaffAuthenticated?: (preceptor?: RegisteredPreceptor, enteredPin?: string) => void;
   activeSessionToOpen?: number | null;
   onClearActiveSession?: () => void;
   userRole: 'trainee' | 'preceptor' | 'lead_educator';
@@ -48,6 +49,7 @@ export function PartIIDetailedLogSheets({
   onSaveLog,
   onAddAttachmentToLog,
   onRemoveAttachmentFromLog,
+  onStaffAuthenticated,
   activeSessionToOpen,
   onClearActiveSession,
   userRole,
@@ -1112,8 +1114,9 @@ export function PartIIDetailedLogSheets({
           setIsPinModalOpen(false);
           setPendingLogToSign(null);
         }}
-        onSuccess={(preceptor) => {
+        onSuccess={(preceptor, enteredPin) => {
           setIsPinModalOpen(false);
+          onStaffAuthenticated?.(preceptor, enteredPin);
           if (pendingLogToSign) {
             openPreceptorSigningModal(pendingLogToSign, preceptor);
             setPendingLogToSign(null);

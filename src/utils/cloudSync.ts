@@ -405,7 +405,7 @@ class CloudSyncService {
     student: CohortStudentRecord,
     source: 'trainee' | 'preceptor',
     message?: string
-  ): Promise<void> {
+  ): Promise<{ ok: boolean; offline?: boolean; error?: string }> {
     const payload = {
       student,
       source,
@@ -413,28 +413,57 @@ class CloudSyncService {
       clientId: CLIENT_ID,
     };
 
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      return {
+        ok: false,
+        offline: true,
+        error: 'Device browser reports no active internet connection (offline).',
+      };
+    }
+
     try {
       const res = await fetch('/api/sync/student', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       });
-      if (res.ok) return;
+      if (res.ok) {
+        const json = await res.json().catch(() => ({ success: true }));
+        if (json?.success !== false) {
+          return { ok: true };
+        }
+        return { ok: false, offline: false, error: json?.error || 'Server rejected student sync.' };
+      }
+      const errText = await res.text().catch(() => '');
+      return {
+        ok: false,
+        offline: false,
+        error: `Live server returned HTTP ${res.status}${errText ? `: ${errText.slice(0, 140)}` : ''}`,
+      };
     } catch (err) {
       console.warn('[CloudSync] HTTP student sync failed, attempting WebSocket fallback:', err);
-    }
-
-    if (this.isWsConnected()) {
-      try {
-        this.ws!.send(
-          JSON.stringify({
-            type: 'SYNC_STUDENT',
-            ...payload,
-          })
-        );
-      } catch (e) {
-        console.error('[CloudSync] WS fallback send error:', e);
+      if (this.isWsConnected()) {
+        try {
+          this.ws!.send(
+            JSON.stringify({
+              type: 'SYNC_STUDENT',
+              ...payload,
+            })
+          );
+          return {
+            ok: false,
+            offline: true,
+            error: 'HTTP server request failed; attempted live WebSocket fallback.',
+          };
+        } catch (e) {
+          console.error('[CloudSync] WS fallback send error:', e);
+        }
       }
+      return {
+        ok: false,
+        offline: true,
+        error: err instanceof Error ? err.message : 'Network error reaching live sync server.',
+      };
     }
   }
 
@@ -455,13 +484,13 @@ class CloudSyncService {
     student: CohortStudentRecord,
     source: 'trainee' | 'preceptor' = 'trainee',
     message?: string
-  ): Promise<void> {
+  ): Promise<{ ok: boolean; offline?: boolean; error?: string }> {
     const key = `sync_student_${student.id || student.traineeInfo.traineeId}`;
     if (this.debounceTimers[key]) {
       clearTimeout(this.debounceTimers[key]);
       delete this.debounceTimers[key];
     }
-    await this.postStudentSync(student, source, message);
+    return this.postStudentSync(student, source, message);
   }
 
   public async syncCohort(cohort: CohortStudentRecord[], source: 'trainee' | 'preceptor' = 'preceptor') {

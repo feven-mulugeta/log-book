@@ -25,7 +25,8 @@ interface PartITrackingMatrixProps {
   onQuickPreceptorSign?: (
     sessionNumber: number,
     newStatus: 'Met' | 'Pending',
-    preceptor?: RegisteredPreceptor
+    preceptor?: RegisteredPreceptor,
+    enteredPin?: string
   ) => void;
   userRole?: UserRole;
 }
@@ -109,12 +110,12 @@ export function PartITrackingMatrix({
     }
   };
 
-  const handlePinSuccess = (preceptor?: RegisteredPreceptor) => {
+  const handlePinSuccess = (preceptor?: RegisteredPreceptor, enteredPin?: string) => {
     setPinModalOpen(false);
     if (sessionToSign !== null && onQuickPreceptorSign) {
       const log = getLogForSession(sessionToSign);
       const newStatus = log?.status === 'Met' ? 'Pending' : 'Met';
-      onQuickPreceptorSign(sessionToSign, newStatus, preceptor);
+      onQuickPreceptorSign(sessionToSign, newStatus, preceptor, enteredPin);
       setSessionToSign(null);
     }
   };

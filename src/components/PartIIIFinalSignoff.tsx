@@ -26,6 +26,7 @@ interface PartIIIFinalSignoffProps {
   detailedLogs: DetailedActivityLogSheet[];
   finalSignoff: FinalCompetencySignoff;
   onUpdateFinalSignoff: (signoff: FinalCompetencySignoff) => void;
+  onStaffAuthenticated?: (preceptor?: RegisteredPreceptor, enteredPin?: string) => void;
   userRole: 'trainee' | 'preceptor' | 'lead_educator';
 }
 
@@ -34,6 +35,7 @@ export function PartIIIFinalSignoff({
   detailedLogs,
   finalSignoff,
   onUpdateFinalSignoff,
+  onStaffAuthenticated,
   userRole,
 }: PartIIIFinalSignoffProps) {
   const registeredLeadEducators = getStoredPreceptors().filter((p) => p.role === 'lead_educator');
@@ -334,8 +336,9 @@ export function PartIIIFinalSignoff({
         isOpen={isPinModalOpen}
         onClose={() => setIsPinModalOpen(false)}
         requiredRole="lead_educator"
-        onSuccess={(preceptor?: RegisteredPreceptor) => {
+        onSuccess={(preceptor?: RegisteredPreceptor, enteredPin?: string) => {
           setIsPinModalOpen(false);
+          onStaffAuthenticated?.(preceptor, enteredPin);
           if (preceptor) {
             setLeadEducatorName(preceptor.name);
           }

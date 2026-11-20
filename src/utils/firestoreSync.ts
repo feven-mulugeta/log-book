@@ -12,6 +12,7 @@ import {
   serverTimestamp,
   Timestamp,
   enableNetwork,
+  waitForPendingWrites,
 } from 'firebase/firestore';
 import { User } from 'firebase/auth';
 import {
@@ -43,6 +44,47 @@ export class FirestoreOfflineError extends Error {
 
 export function reconnectFirestoreNetwork(): Promise<void> {
   return enableNetwork(db).catch(() => {});
+}
+
+export async function verifyFirestoreWritesCommitted(timeoutMs = 12000): Promise<void> {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new FirestoreOfflineError(
+      'Device is offline. Cloud database could not confirm your entry.'
+    );
+  }
+  await new Promise<void>((resolve, reject) => {
+    let settled = false;
+    const timer = setTimeout(() => {
+      if (!settled) {
+        settled = true;
+        reject(
+          new FirestoreOfflineError(
+            'Cloud database did not confirm the save in time due to a slow or interrupted network connection.'
+          )
+        );
+      }
+    }, timeoutMs);
+
+    waitForPendingWrites(db)
+      .then(() => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          resolve();
+        }
+      })
+      .catch((err) => {
+        if (!settled) {
+          settled = true;
+          clearTimeout(timer);
+          if (isFirestoreOfflineError(err)) {
+            reject(new FirestoreOfflineError());
+          } else {
+            reject(err);
+          }
+        }
+      });
+  });
 }
 
 function isPermissionDeniedError(error: unknown): boolean {
@@ -618,6 +660,12 @@ export async function saveStudentDossierToFirestore(
   if (safeId.startsWith('student-blank-')) return;
   if (!student.traineeInfo.traineeName.trim() && !student.traineeInfo.traineeId.trim()) return;
 
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new FirestoreOfflineError(
+      'No active internet connection detected. Your entry has not been saved to the Cloud Database.'
+    );
+  }
+
   const isAdmin = isUserRootAdmin(user);
   const docPath = `cohortStudents/${safeId}`;
   const docRef = doc(db, 'cohortStudents', safeId);
@@ -957,6 +1005,8 @@ export async function saveStudentDossierToFirestore(
       }
     }
   }
+
+  await verifyFirestoreWritesCommitted();
 }
 
 export async function removeAttachmentFromFirestore(
@@ -999,6 +1049,8 @@ export async function removeAttachmentFromFirestore(
   } catch (err) {
     handleFirestoreFailure(err, OperationType.DELETE, `cohortStudents/${safeId}/logs/${safeLogId}/attachments/${safeAttId}`);
   }
+
+  await verifyFirestoreWritesCommitted();
 }
 
 export async function deleteStudentFromFirestoreIfAdmin(
