@@ -46,6 +46,7 @@ class CloudSyncService {
   private lastPollTimestamp = new Date().toISOString();
   private debounceTimers: Record<string, any> = {};
   private isInitialized = false;
+  private hasAuthoritativeCloudPreceptors = false;
   private processedEventIds = new Set<string>();
 
   private studentUpdateListeners = new Set<StudentUpdateCallback>();
@@ -209,7 +210,7 @@ class CloudSyncService {
             this.notifyCohortUpdated(json.data.cohortStudents);
           }
           if (json.data.preceptors && json.data.preceptors.length > 0) {
-            this.notifyPreceptorUpdated(json.data.preceptors);
+            this.notifyPreceptorUpdated(json.data.preceptors, true);
           }
           if (json.data.activeConnections !== undefined) {
             this.liveDevicesCount = Math.max(1, json.data.activeConnections);
@@ -238,7 +239,7 @@ class CloudSyncService {
         this.notifyCohortUpdated(msg.state.cohortStudents);
       }
       if (Array.isArray(msg.state?.preceptors)) {
-        this.notifyPreceptorUpdated(msg.state.preceptors);
+        this.notifyPreceptorUpdated(msg.state.preceptors, true);
       }
       if (msg.state?.activeConnections) {
         this.liveDevicesCount = msg.state.activeConnections;
@@ -257,7 +258,7 @@ class CloudSyncService {
       }
     } else if (msg.type === 'PRECEPTORS_UPDATED') {
       if (Array.isArray(msg.preceptors)) {
-        this.notifyPreceptorUpdated(msg.preceptors);
+        this.notifyPreceptorUpdated(msg.preceptors, false);
       }
     } else if (msg.type === 'SYNC_EVENT' && msg.event) {
       this.generateNotificationForEvent(msg.event);
@@ -352,8 +353,20 @@ class CloudSyncService {
     });
   }
 
-  private notifyPreceptorUpdated(preceptors: RegisteredPreceptor[]) {
+  public setAuthoritativePreceptorsLoaded(loaded: boolean) {
+    this.hasAuthoritativeCloudPreceptors = loaded;
+  }
+
+  private notifyPreceptorUpdated(
+    preceptors: RegisteredPreceptor[],
+    isFromSnapshot = false
+  ) {
     if (!Array.isArray(preceptors) || preceptors.length === 0) return;
+    if (isFromSnapshot && this.hasAuthoritativeCloudPreceptors) {
+      // Cloud Firestore has already hydrated the authoritative preceptor/mentor wards;
+      // do not let stale container snapshot defaults overwrite them.
+      return;
+    }
     const cleaned = preceptors.filter((p) => p && typeof p === 'object' && p.name);
     if (cleaned.length === 0) return;
     saveStoredPreceptors(cleaned);

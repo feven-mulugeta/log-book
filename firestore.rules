@@ -323,7 +323,11 @@ service cloud.firestore {
     // 3b. Secret-Free Preceptor & Mentor Permanent Ward Directory
     match /preceptors/{preceptorId} {
       allow get: if isVerifiedUser() && isValidId(preceptorId);
-      allow list: if isVerifiedUser() && resource.data.role in ['preceptor', 'mentor', 'lead_educator'];
+      allow list: if isVerifiedUser() && (
+        resource.data.role == 'preceptor' ||
+        resource.data.role == 'mentor' ||
+        resource.data.role == 'lead_educator'
+      );
 
       allow create: if isVerifiedUser()
         && isValidId(preceptorId)

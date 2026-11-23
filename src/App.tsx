@@ -96,6 +96,7 @@ import {
   deleteStudentFromFirestoreIfAdmin,
   savePreceptorsRosterToFirestore,
   loadPreceptorsFromFirestore,
+  subscribePreceptorsFromFirestore,
   toFirestoreSafeId,
   FirestoreOfflineError,
   reconnectFirestoreNetwork,
@@ -220,6 +221,42 @@ export default function App() {
   const lastSyncedHashRef = useRef<string>('');
   const lastFirestoreHashRef = useRef<string>('');
   const lastLocalTraineeEditAtRef = useRef<number>(0);
+  const lastPushedPreceptorsHashRef = useRef<string>('');
+
+  const computePreceptorsHash = (list: RegisteredPreceptor[]) =>
+    list
+      .map(
+        (p) =>
+          `${p.id}|${p.name}|${p.wardDepartment}|${p.role}|${p.title}|${p.initials}`
+      )
+      .sort()
+      .join('||');
+
+  const applyHydratedPreceptors = (
+    list: RegisteredPreceptor[],
+    syncLocalContainer: boolean
+  ) => {
+    if (!Array.isArray(list) || list.length === 0) return;
+    saveStoredPreceptors(list);
+    cloudSync.setAuthoritativePreceptorsLoaded(true);
+    window.dispatchEvent(new CustomEvent('ncep-preceptors-updated', { detail: list }));
+    setAuthenticatedPreceptor((prevAuth) => {
+      if (!prevAuth) return prevAuth;
+      const refreshed = list.find(
+        (p) =>
+          p.id === prevAuth.id ||
+          (p.name || '').trim().toLowerCase() === (prevAuth.name || '').trim().toLowerCase()
+      );
+      return refreshed || prevAuth;
+    });
+    if (syncLocalContainer) {
+      const nextHash = computePreceptorsHash(list);
+      if (lastPushedPreceptorsHashRef.current !== nextHash) {
+        lastPushedPreceptorsHashRef.current = nextHash;
+        cloudSync.syncPreceptors(list);
+      }
+    }
+  };
 
   const computeStudentHash = (student: CohortStudentRecord) => {
     const t = student?.traineeInfo;
@@ -383,6 +420,16 @@ export default function App() {
     const unsubPreceptors = cloudSync.onPreceptorsUpdated((remotePreceptors) => {
       if (Array.isArray(remotePreceptors) && remotePreceptors.length > 0) {
         saveStoredPreceptors(remotePreceptors);
+        window.dispatchEvent(new CustomEvent('ncep-preceptors-updated', { detail: remotePreceptors }));
+        setAuthenticatedPreceptor((prevAuth) => {
+          if (!prevAuth) return prevAuth;
+          const refreshed = remotePreceptors.find(
+            (p) =>
+              p.id === prevAuth.id ||
+              (p.name || '').trim().toLowerCase() === (prevAuth.name || '').trim().toLowerCase()
+          );
+          return refreshed || prevAuth;
+        });
       }
     });
 
@@ -829,6 +876,8 @@ export default function App() {
     deletedIds?: string[]
   ) => {
     saveStoredPreceptors(updatedPreceptors);
+    cloudSync.setAuthoritativePreceptorsLoaded(true);
+    lastPushedPreceptorsHashRef.current = computePreceptorsHash(updatedPreceptors);
 
     if (authenticatedPreceptor) {
       const refreshedAuth = updatedPreceptors.find(
@@ -949,10 +998,12 @@ export default function App() {
   useEffect(() => {
     if (!authReady || !firebaseUser || !firebaseUser.emailVerified) {
       setIsFirestoreStaff(false);
+      cloudSync.setAuthoritativePreceptorsLoaded(false);
       return;
     }
 
     let cancelled = false;
+    let unsubPreceptorsFs: (() => void) | null = null;
 
     const initFirestoreForUser = async () => {
       try {
@@ -979,24 +1030,27 @@ export default function App() {
           if (cancelled) return;
         }
 
-        // Hydrate permanent preceptor & mentor directory (including saved wards) from Cloud DB
-        const remotePreceptors = await loadPreceptorsFromFirestore(
+        // Hydrate permanent preceptor & mentor directory (including saved wards) directly from Cloud Firestore
+        const { preceptors: remotePreceptors, fromCloud } = await loadPreceptorsFromFirestore(
           firebaseUser,
           getStoredPreceptors()
         );
         if (cancelled) return;
-        if (Array.isArray(remotePreceptors) && remotePreceptors.length > 0) {
-          saveStoredPreceptors(remotePreceptors);
-          window.dispatchEvent(new CustomEvent('ncep-preceptors-updated', { detail: remotePreceptors }));
-          setAuthenticatedPreceptor((prevAuth) => {
-            if (!prevAuth) return prevAuth;
-            const refreshed = remotePreceptors.find(
-              (p) =>
-                p.id === prevAuth.id ||
-                (p.name || '').trim().toLowerCase() === (prevAuth.name || '').trim().toLowerCase()
-            );
-            return refreshed || prevAuth;
-          });
+        if (fromCloud && Array.isArray(remotePreceptors) && remotePreceptors.length > 0) {
+          applyHydratedPreceptors(remotePreceptors, true);
+        }
+
+        // Live multi-device listener for any future ward edits made on another device
+        if (!unsubPreceptorsFs) {
+          unsubPreceptorsFs = subscribePreceptorsFromFirestore(
+            firebaseUser,
+            getStoredPreceptors,
+            (livePreceptors) => {
+              if (!cancelled && Array.isArray(livePreceptors) && livePreceptors.length > 0) {
+                applyHydratedPreceptors(livePreceptors, true);
+              }
+            }
+          );
         }
 
         const remoteStudents = isRootAdmin
@@ -1138,6 +1192,10 @@ export default function App() {
     return () => {
       cancelled = true;
       window.removeEventListener('online', handleOnline);
+      if (unsubPreceptorsFs) {
+        unsubPreceptorsFs();
+        unsubPreceptorsFs = null;
+      }
     };
   }, [authReady, firebaseUser, isRootAdmin]);
 
@@ -1252,6 +1310,13 @@ export default function App() {
         } catch (err: any) {
           console.warn('[FirestoreSync] Staff verification note:', err?.message || err);
         }
+      }
+      const { preceptors: freshPreceptors, fromCloud } = await loadPreceptorsFromFirestore(
+        firebaseUser,
+        getStoredPreceptors()
+      );
+      if (fromCloud && freshPreceptors.length > 0) {
+        applyHydratedPreceptors(freshPreceptors, true);
       }
       if (staffElevated) {
         hydrateSelectedFromFirestoreIfPossible(currentStudentRecord, true);

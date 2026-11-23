@@ -3,6 +3,7 @@ import {
   doc,
   getDoc,
   getDocs,
+  getDocsFromServer,
   setDoc,
   updateDoc,
   deleteDoc,
@@ -1197,59 +1198,152 @@ export async function savePreceptorsRosterToFirestore(
   await verifyFirestoreWritesCommitted();
 }
 
+const PRECEPTOR_ROLES: RegisteredPreceptor['role'][] = [
+  'preceptor',
+  'mentor',
+  'lead_educator',
+];
+
+function mergeRemotePreceptorEntries(
+  remoteEntries: Array<Record<string, any> & { id: string }>,
+  existingLocal: RegisteredPreceptor[]
+): RegisteredPreceptor[] {
+  if (!remoteEntries || remoteEntries.length === 0) return existingLocal;
+  const merged: RegisteredPreceptor[] = [...existingLocal];
+
+  for (const r of remoteEntries) {
+    const rNameLower = String(r.name || '').trim().toLowerCase();
+    const idx = merged.findIndex(
+      (l) =>
+        toFirestoreSafeId(l.id) === r.id ||
+        (rNameLower && (l.name || '').trim().toLowerCase() === rNameLower)
+    );
+    if (idx >= 0) {
+      merged[idx] = {
+        ...merged[idx],
+        name: r.name || merged[idx].name,
+        role: (r.role as RegisteredPreceptor['role']) || merged[idx].role,
+        title: r.title || merged[idx].title,
+        wardDepartment:
+          typeof r.wardDepartment === 'string' && r.wardDepartment.trim()
+            ? r.wardDepartment.trim()
+            : merged[idx].wardDepartment,
+        initials: r.initials || merged[idx].initials,
+      };
+    } else {
+      merged.push({
+        id: r.id,
+        name: r.name || 'Clinical Preceptor',
+        role: (r.role as RegisteredPreceptor['role']) || 'preceptor',
+        title: r.title || 'Clinical Preceptor',
+        wardDepartment: r.wardDepartment || '',
+        initials: r.initials || 'CP',
+        pin: '2026',
+      });
+    }
+  }
+
+  return merged;
+}
+
 export async function loadPreceptorsFromFirestore(
   user: User,
   existingLocal: RegisteredPreceptor[]
-): Promise<RegisteredPreceptor[]> {
-  if (!user?.uid || !user.emailVerified) return existingLocal;
+): Promise<{ preceptors: RegisteredPreceptor[]; fromCloud: boolean }> {
+  if (!user?.uid || !user.emailVerified) {
+    return { preceptors: existingLocal, fromCloud: false };
+  }
 
   try {
-    const q = query(
-      collection(db, 'preceptors'),
-      where('role', 'in', ['preceptor', 'mentor', 'lead_educator'])
+    const snaps = await Promise.all(
+      PRECEPTOR_ROLES.map(async (roleValue) => {
+        const q = query(collection(db, 'preceptors'), where('role', '==', roleValue));
+        try {
+          return await withFirestoreRetry(() => getDocsFromServer(q));
+        } catch {
+          return await withFirestoreRetry(() => getDocs(q));
+        }
+      })
     );
-    const snap = await withFirestoreRetry(() => getDocs(q));
-    if (snap.empty) return existingLocal;
 
-    const remoteEntries: Array<Record<string, any> & { id: string }> = snap.docs.map((d) => ({
-      ...(d.data() as Record<string, any>),
-      id: d.id,
-    }));
-    const merged: RegisteredPreceptor[] = [...existingLocal];
-
-    for (const r of remoteEntries) {
-      const rNameLower = String(r.name || '').trim().toLowerCase();
-      const idx = merged.findIndex(
-        (l) =>
-          toFirestoreSafeId(l.id) === r.id ||
-          (rNameLower && (l.name || '').trim().toLowerCase() === rNameLower)
-      );
-      if (idx >= 0) {
-        merged[idx] = {
-          ...merged[idx],
-          name: r.name || merged[idx].name,
-          role: (r.role as RegisteredPreceptor['role']) || merged[idx].role,
-          title: r.title || merged[idx].title,
-          wardDepartment: r.wardDepartment || merged[idx].wardDepartment,
-          initials: r.initials || merged[idx].initials,
-        };
-      } else {
-        merged.push({
-          id: r.id,
-          name: r.name || 'Clinical Preceptor',
-          role: (r.role as RegisteredPreceptor['role']) || 'preceptor',
-          title: r.title || 'Clinical Preceptor',
-          wardDepartment: r.wardDepartment || '',
-          initials: r.initials || 'CP',
-          pin: '2026',
+    const byId = new Map<string, Record<string, any> & { id: string }>();
+    for (const snap of snaps) {
+      for (const d of snap.docs) {
+        byId.set(d.id, {
+          ...(d.data() as Record<string, any>),
+          id: d.id,
         });
       }
     }
 
-    return merged;
+    const remoteEntries = Array.from(byId.values());
+    if (remoteEntries.length === 0) {
+      return { preceptors: existingLocal, fromCloud: false };
+    }
+
+    return {
+      preceptors: mergeRemotePreceptorEntries(remoteEntries, existingLocal),
+      fromCloud: true,
+    };
   } catch (err) {
     console.warn('[FirestoreSync] Load preceptors directory note:', err);
-    return existingLocal;
+    return { preceptors: existingLocal, fromCloud: false };
   }
 }
 
+export function subscribePreceptorsFromFirestore(
+  user: User,
+  getLocalPreceptors: () => RegisteredPreceptor[],
+  onPreceptorsMerged: (preceptors: RegisteredPreceptor[]) => void
+): () => void {
+  if (!user?.uid || !user.emailVerified) return () => {};
+
+  const entriesByRole: Record<
+    string,
+    Array<Record<string, any> & { id: string }>
+  > = {
+    preceptor: [],
+    mentor: [],
+    lead_educator: [],
+  };
+
+  const emitCombined = () => {
+    const combinedMap = new Map<string, Record<string, any> & { id: string }>();
+    for (const roleKey of PRECEPTOR_ROLES) {
+      for (const entry of entriesByRole[roleKey] || []) {
+        combinedMap.set(entry.id, entry);
+      }
+    }
+    const allRemote = Array.from(combinedMap.values());
+    if (allRemote.length === 0) return;
+    const merged = mergeRemotePreceptorEntries(allRemote, getLocalPreceptors());
+    onPreceptorsMerged(merged);
+  };
+
+  const unsubscribers = PRECEPTOR_ROLES.map((roleValue) => {
+    const q = query(collection(db, 'preceptors'), where('role', '==', roleValue));
+    return onSnapshot(
+      q,
+      (snap) => {
+        entriesByRole[roleValue] = snap.docs.map((d) => ({
+          ...(d.data() as Record<string, any>),
+          id: d.id,
+        }));
+        emitCombined();
+      },
+      (err) => {
+        console.warn(`[FirestoreSync] Real-time preceptors (${roleValue}) listener note:`, err);
+      }
+    );
+  });
+
+  return () => {
+    unsubscribers.forEach((u) => {
+      try {
+        u();
+      } catch {
+        // ignore cleanup error
+      }
+    });
+  };
+}

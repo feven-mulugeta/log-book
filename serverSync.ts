@@ -2624,7 +2624,7 @@ export function updatePreceptorsRoster(
   if (!Array.isArray(preceptors)) return inMemoryStore.preceptors;
 
   inMemoryStore.preceptors = preceptors;
-  saveStoreToDisk();
+  saveStoreToDisk(true);
 
   const event = logSyncEvent(
     'PRECEPTORS_UPDATED',
