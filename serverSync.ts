@@ -2411,11 +2411,25 @@ function mergeServerDetailedLogs(existingLogs: any[] = [], incomingLogs: any[] =
     const iSigned = rawI.status === 'Met' || Boolean(rawI.preceptorSignoff?.isSigned);
     const eSigned = existing.status === 'Met' || Boolean(existing.preceptorSignoff?.isSigned);
 
+    const parseMs = (v: any): number => {
+      if (typeof v !== 'string' || !v) return 0;
+      const t = Date.parse(v);
+      return Number.isFinite(t) ? t : 0;
+    };
+
     let winner = existing;
     if (iSigned && !eSigned) {
-      winner = rawI;
+      const existingRevokedMs = parseMs(existing.signoffRevokedAt);
+      const incomingSignedMs = parseMs(
+        rawI.signoffUpdatedAt || rawI.preceptorSignoff?.dateSigned
+      );
+      winner = existingRevokedMs > 0 && existingRevokedMs >= incomingSignedMs ? existing : rawI;
     } else if (eSigned && !iSigned) {
-      winner = existing;
+      const incomingRevokedMs = parseMs(rawI.signoffRevokedAt);
+      const existingSignedMs = parseMs(
+        existing.signoffUpdatedAt || existing.preceptorSignoff?.dateSigned
+      );
+      winner = incomingRevokedMs > 0 && incomingRevokedMs >= existingSignedMs ? rawI : existing;
     } else {
       const iScore =
         (rawI.activityDescription?.length || 0) +
@@ -2430,9 +2444,16 @@ function mergeServerDetailedLogs(existingLogs: any[] = [], incomingLogs: any[] =
       }
     }
 
+    const winnerSigned = winner.status === 'Met' || Boolean(winner.preceptorSignoff?.isSigned);
+    const latestRevokedAt =
+      parseMs(existing.signoffRevokedAt) >= parseMs(rawI.signoffRevokedAt)
+        ? existing.signoffRevokedAt
+        : rawI.signoffRevokedAt;
+
     bySession.set(sessionNum, {
       ...winner,
       attachments: mergedAtts,
+      ...(!winnerSigned && latestRevokedAt ? { signoffRevokedAt: latestRevokedAt } : {}),
       ...(combinedRemoved.length > 0 ? { removedAttachmentIds: combinedRemoved } : {}),
     });
   }

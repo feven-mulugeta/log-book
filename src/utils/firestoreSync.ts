@@ -541,6 +541,10 @@ export async function hydrateStudentFromDocData(
           });
       }
 
+      const logUpdatedIso = timestampToIso(d.updatedAt);
+      const isLogSigned = Boolean(d.preceptorSignoff?.isSigned);
+      const wasRevokedByStaff = !isLogSigned && Boolean(d.preceptorUid);
+
       return {
         id: d.id || logDocId,
         sessionNumber: Number(d.sessionNumber) || 1,
@@ -553,7 +557,11 @@ export async function hydrateStudentFromDocData(
         activityDescription: d.activityDescription || '',
         reflectiveNotesLessonsLearned: d.reflectiveNotesLessonsLearned || '',
         attachments,
-        preceptorSignoff: d.preceptorSignoff?.isSigned ? d.preceptorSignoff : undefined,
+        preceptorSignoff: isLogSigned ? d.preceptorSignoff : undefined,
+        ...(isLogSigned && (logUpdatedIso || d.preceptorSignoff?.dateSigned)
+          ? { signoffUpdatedAt: logUpdatedIso || d.preceptorSignoff?.dateSigned }
+          : {}),
+        ...(wasRevokedByStaff && logUpdatedIso ? { signoffRevokedAt: logUpdatedIso } : {}),
         status: d.status === 'Met' ? 'Met' : 'Pending',
         source: d.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
         createdAt: timestampToIso(d.createdAt),
@@ -922,8 +930,14 @@ export async function saveStudentDossierToFirestore(
     } else {
       try {
         if (isAdmin) {
+          const effectiveAdminPreceptorUid = log.preceptorSignoff?.isSigned
+            ? existingLog?.preceptorUid || user.uid
+            : log.signoffRevokedAt
+              ? user.uid
+              : existingLog?.preceptorUid || '';
           await withFirestoreRetry(() =>
             updateDoc(logRef, {
+              preceptorUid: effectiveAdminPreceptorUid,
               dateOfActivity: boundStr(log.dateOfActivity, 32),
               durationHours: Math.min(240, Math.max(0, Number(log.durationHours) || 0)),
               clinicalSettingWard: boundStr(log.clinicalSettingWard, 120),

@@ -1727,6 +1727,7 @@ export default function App() {
 
     const prevLogs = detailedLogsRef.current;
     const existingIdx = prevLogs.findIndex((l) => l.sessionNumber === sessionNumber);
+    const nowIso = new Date().toISOString();
     let updatedLogs: DetailedActivityLogSheet[];
 
     if (existingIdx >= 0) {
@@ -1736,6 +1737,8 @@ export default function App() {
         ...current,
         status: newStatus,
         dateOfActivity: current.dateOfActivity || today,
+        signoffUpdatedAt: nowIso,
+        signoffRevokedAt: newStatus === 'Pending' ? nowIso : undefined,
         preceptorSignoff:
           newStatus === 'Met'
             ? {
@@ -1768,6 +1771,8 @@ export default function App() {
         status: newStatus,
         source: 'manual',
         createdAt: today,
+        signoffUpdatedAt: nowIso,
+        signoffRevokedAt: newStatus === 'Pending' ? nowIso : undefined,
         preceptorSignoff:
           newStatus === 'Met'
             ? {
@@ -1811,11 +1816,11 @@ export default function App() {
       actionTitle:
         newStatus === 'Met'
           ? `Preceptor Sign-Off Verified (Session ${sessionNumber} · Met)`
-          : `Preceptor Status Updated (Session ${sessionNumber} · Pending)`,
+          : `Preceptor Signature Removed (Session ${sessionNumber} · Pending)`,
       roleSource: 'preceptor',
       roleLabel: userRole === 'lead_educator' ? 'Lead Clinical Educator' : 'Clinical Preceptor / Mentor',
-      evaluatorName: newStatus === 'Met' ? effectiveName : undefined,
-      evaluatorWard: newStatus === 'Met' && effectiveWard ? effectiveWard : undefined,
+      evaluatorName: newStatus === 'Met' ? effectiveName : activePreceptor?.name,
+      evaluatorWard: newStatus === 'Met' && effectiveWard ? effectiveWard : activePreceptor?.wardDepartment || undefined,
       isStaffAction: true,
       inlineStaff,
     });
@@ -1871,6 +1876,9 @@ export default function App() {
     );
 
     const existingBeforeSave = idx >= 0 ? prevLogs[idx] : undefined;
+    const isPreceptorUnsigningAction = Boolean(
+      existingBeforeSave?.preceptorSignoff?.isSigned && !enrichedLog.preceptorSignoff?.isSigned
+    );
     const isPreceptorSigningAction = Boolean(
       enrichedLog.preceptorSignoff?.isSigned &&
         (!existingBeforeSave?.preceptorSignoff?.isSigned ||
@@ -1880,22 +1888,35 @@ export default function App() {
           userRole !== 'trainee')
     );
 
+    const isStaffSignoffMutation = isPreceptorSigningAction || isPreceptorUnsigningAction;
+
     saveAndConfirmStudentToCloud({
       record: updatedRecord,
-      actionTitle: isPreceptorSigningAction
-        ? `Preceptor Sign-Off Saved (Session ${enrichedLog.sessionNumber} · ${enrichedLog.status})`
-        : `Session ${enrichedLog.sessionNumber} Clinical Activity Log Saved`,
-      roleSource: isPreceptorSigningAction || userRole !== 'trainee' ? 'preceptor' : 'trainee',
+      actionTitle: isPreceptorUnsigningAction
+        ? `Preceptor Signature Removed (Session ${enrichedLog.sessionNumber} · Pending)`
+        : isPreceptorSigningAction
+          ? `Preceptor Sign-Off Saved (Session ${enrichedLog.sessionNumber} · ${enrichedLog.status})`
+          : `Session ${enrichedLog.sessionNumber} Clinical Activity Log Saved`,
+      roleSource: isStaffSignoffMutation || userRole !== 'trainee' ? 'preceptor' : 'trainee',
       roleLabel:
         userRole === 'lead_educator'
           ? 'Lead Clinical Educator'
-          : isPreceptorSigningAction || userRole === 'preceptor'
+          : isStaffSignoffMutation || userRole === 'preceptor'
             ? 'Clinical Preceptor / Mentor'
             : 'Student / Trainee',
-      evaluatorName: isPreceptorSigningAction ? enrichedLog.preceptorSignoff?.preceptorName : undefined,
-      evaluatorWard: isPreceptorSigningAction && resolvedSignoffWard ? resolvedSignoffWard : undefined,
-      isStaffAction: isPreceptorSigningAction || userRole !== 'trainee',
-      inlineStaff: isPreceptorSigningAction ? inlineStaffCredentialRef.current : null,
+      evaluatorName: isPreceptorSigningAction
+        ? enrichedLog.preceptorSignoff?.preceptorName
+        : isPreceptorUnsigningAction
+          ? authenticatedPreceptor?.name || inlineStaffCredentialRef.current?.preceptor?.name
+          : undefined,
+      evaluatorWard:
+        isPreceptorSigningAction && resolvedSignoffWard
+          ? resolvedSignoffWard
+          : isPreceptorUnsigningAction
+            ? authenticatedPreceptor?.wardDepartment || inlineStaffCredentialRef.current?.preceptor?.wardDepartment
+            : undefined,
+      isStaffAction: isStaffSignoffMutation || userRole !== 'trainee',
+      inlineStaff: isStaffSignoffMutation ? inlineStaffCredentialRef.current : null,
     });
   };
 

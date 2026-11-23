@@ -81,6 +81,12 @@ export function normalizeDetailedLog(log: any, index: number = 0): DetailedActiv
         }
       : {}),
     preceptorSignoff: raw.preceptorSignoff && typeof raw.preceptorSignoff === 'object' ? raw.preceptorSignoff : undefined,
+    ...(typeof raw.signoffUpdatedAt === 'string' && raw.signoffUpdatedAt
+      ? { signoffUpdatedAt: raw.signoffUpdatedAt }
+      : {}),
+    ...(typeof raw.signoffRevokedAt === 'string' && raw.signoffRevokedAt
+      ? { signoffRevokedAt: raw.signoffRevokedAt }
+      : {}),
     status: raw.status === 'Met' ? 'Met' : 'Pending',
     source: raw.source === 'ocr_scan' ? 'ocr_scan' : 'manual',
     createdAt: typeof raw.createdAt === 'string' ? raw.createdAt : new Date().toISOString(),
@@ -102,6 +108,12 @@ export function mergeAttachments(
     }
   }
   return Array.from(map.values());
+}
+
+function parseTimestampMs(val?: string): number {
+  if (!val || typeof val !== 'string') return 0;
+  const parsed = Date.parse(val);
+  return Number.isFinite(parsed) ? parsed : 0;
 }
 
 export function mergeDetailedLogArrays(
@@ -133,9 +145,17 @@ export function mergeDetailedLogArrays(
 
     let winner: DetailedActivityLogSheet = existing;
     if (rSigned && !lSigned) {
-      winner = r;
+      const localRevokedMs = parseTimestampMs(existing.signoffRevokedAt);
+      const remoteSignedMs = parseTimestampMs(
+        r.signoffUpdatedAt || r.preceptorSignoff?.dateSigned
+      );
+      winner = localRevokedMs > 0 && localRevokedMs >= remoteSignedMs ? existing : r;
     } else if (lSigned && !rSigned) {
-      winner = existing;
+      const remoteRevokedMs = parseTimestampMs(r.signoffRevokedAt);
+      const localSignedMs = parseTimestampMs(
+        existing.signoffUpdatedAt || existing.preceptorSignoff?.dateSigned
+      );
+      winner = remoteRevokedMs > 0 && remoteRevokedMs >= localSignedMs ? r : existing;
     } else {
       const rScore =
         (r.activityDescription?.length || 0) +
@@ -150,9 +170,16 @@ export function mergeDetailedLogArrays(
       }
     }
 
+    const winnerSigned = winner.status === 'Met' || Boolean(winner.preceptorSignoff?.isSigned);
+    const latestRevokedAt =
+      parseTimestampMs(existing.signoffRevokedAt) >= parseTimestampMs(r.signoffRevokedAt)
+        ? existing.signoffRevokedAt
+        : r.signoffRevokedAt;
+
     mergedBySession.set(r.sessionNumber, {
       ...winner,
       attachments: mergedAtts,
+      ...(!winnerSigned && latestRevokedAt ? { signoffRevokedAt: latestRevokedAt } : {}),
       ...(combinedRemoved.length > 0 ? { removedAttachmentIds: combinedRemoved } : {}),
     });
   }

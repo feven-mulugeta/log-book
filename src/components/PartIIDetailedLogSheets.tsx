@@ -17,6 +17,7 @@ import {
   Lock,
   Trash2,
   MapPin,
+  RotateCcw,
 } from 'lucide-react';
 import {
   DetailedActivityLogSheet,
@@ -83,7 +84,9 @@ export function PartIIDetailedLogSheets({
   // Preceptor Signing State
   const [signingLog, setSigningLog] = useState<DetailedActivityLogSheet | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
+  const [pinActionMode, setPinActionMode] = useState<'sign' | 'remove_sign'>('sign');
   const [pendingLogToSign, setPendingLogToSign] = useState<DetailedActivityLogSheet | null>(null);
+  const [confirmRemoveSignLogId, setConfirmRemoveSignLogId] = useState<string | null>(null);
   const [preceptorName, setPreceptorName] = useState(
     () => authenticatedPreceptor?.name || getStoredPreceptors()[0]?.name || 'Abaynesh Mekonnen'
   );
@@ -111,7 +114,8 @@ export function PartIIDetailedLogSheets({
       setPreceptorInitials(activeStaff.initials);
       setPreceptorWard(activeStaff.wardDepartment || '');
       setPreceptorComments(
-        `Competency demonstrated and validated by ${activeStaff.name} (${activeStaff.title} · ${activeStaff.wardDepartment}).`
+        log.preceptorSignoff?.comments ||
+          `Competency demonstrated and validated by ${activeStaff.name} (${activeStaff.title} · ${activeStaff.wardDepartment}).`
       );
     } else {
       const stored = getStoredPreceptors();
@@ -137,11 +141,36 @@ export function PartIIDetailedLogSheets({
   };
 
   const handleInitiatePreceptorSign = (log: DetailedActivityLogSheet) => {
+    setConfirmRemoveSignLogId(null);
+    setPinActionMode('sign');
     if (userRole === 'trainee') {
       setPendingLogToSign(log);
       setIsPinModalOpen(true);
     } else {
       openPreceptorSigningModal(log, authenticatedPreceptor || undefined);
+    }
+  };
+
+  const handleRemovePreceptorSignature = (log: DetailedActivityLogSheet) => {
+    const nowIso = new Date().toISOString();
+    const updated: DetailedActivityLogSheet = {
+      ...log,
+      preceptorSignoff: undefined,
+      status: 'Pending',
+      signoffRevokedAt: nowIso,
+      signoffUpdatedAt: nowIso,
+    };
+    setConfirmRemoveSignLogId(null);
+    onSaveLog(updated);
+  };
+
+  const handleInitiateRemoveSign = (log: DetailedActivityLogSheet) => {
+    setPinActionMode('remove_sign');
+    if (userRole === 'trainee') {
+      setPendingLogToSign(log);
+      setIsPinModalOpen(true);
+    } else {
+      setConfirmRemoveSignLogId((prev) => (prev === log.id ? null : log.id));
     }
   };
 
@@ -248,10 +277,13 @@ export function PartIIDetailedLogSheets({
       comments: preceptorComments.trim(),
     };
 
+    const nowIso = new Date().toISOString();
     const updated: DetailedActivityLogSheet = {
       ...signingLog,
       preceptorSignoff: signoff,
       status: competencyDemonstrated === 'Satisfactory' ? 'Met' : 'Pending',
+      signoffUpdatedAt: nowIso,
+      signoffRevokedAt: undefined,
     };
 
     onSaveLog(updated);
@@ -560,27 +592,80 @@ export function PartIIDetailedLogSheets({
                       <h4 className="text-xs font-bold font-sans text-slate-900 uppercase">
                         3. Preceptor / Mentor Feedback &amp; Formative Evaluation:
                       </h4>
-                      {!isSigned && (
-                        <div className="flex items-center gap-2">
-                          {userRole === 'trainee' && (
-                            <span className="text-[11px] font-sans font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
-                              <Lock className="w-3 h-3 text-amber-700" />
-                              <span>Preceptor Only</span>
-                            </span>
-                          )}
+                      <div className="flex flex-wrap items-center gap-2">
+                        {!isSigned ? (
+                          <>
+                            {userRole === 'trainee' && (
+                              <span className="text-[11px] font-sans font-medium text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200 flex items-center gap-1">
+                                <Lock className="w-3 h-3 text-amber-700" />
+                                <span>Preceptor Only</span>
+                              </span>
+                            )}
+                            <button
+                              type="button"
+                              onClick={() => handleInitiatePreceptorSign(log)}
+                              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors shadow-2xs"
+                            >
+                              <Award className="w-3.5 h-3.5" />
+                              <span>
+                                {userRole === 'trainee' ? 'Preceptor Sign-off (PIN)' : 'Sign Formative Sheet'}
+                              </span>
+                            </button>
+                          </>
+                        ) : (
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => handleInitiatePreceptorSign(log)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-sans font-semibold text-teal-800 bg-white hover:bg-teal-50 border border-teal-200 rounded-lg transition-colors"
+                              title="Update evaluation or re-draw preceptor signature"
+                            >
+                              <Edit2 className="w-3 h-3" />
+                              <span>Edit Sign-off</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleInitiateRemoveSign(log)}
+                              className="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs font-sans font-semibold text-rose-700 bg-white hover:bg-rose-50 border border-rose-200 rounded-lg transition-colors"
+                              title="Remove a signature that was signed by mistake (Preceptor PIN required)"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                              <span>
+                                {userRole === 'trainee' ? 'Remove Signature (PIN)' : 'Remove Signature'}
+                              </span>
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    </div>
+
+                    {isSigned && confirmRemoveSignLogId === log.id && (
+                      <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 font-sans text-xs">
+                        <div className="flex items-start gap-2 text-rose-900">
+                          <AlertCircle className="w-4 h-4 text-rose-700 shrink-0 mt-0.5" />
+                          <span>
+                            Remove signature signed by mistake on <strong>Session {log.sessionNumber}</strong>? This clears the signature &amp; evaluation comments and resets status to <strong>Pending</strong>.
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 shrink-0">
                           <button
                             type="button"
-                            onClick={() => handleInitiatePreceptorSign(log)}
-                            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-sans font-semibold text-white bg-teal-700 hover:bg-teal-800 rounded-lg transition-colors shadow-2xs"
+                            onClick={() => setConfirmRemoveSignLogId(null)}
+                            className="px-3 py-1.5 text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-50 rounded-lg"
                           >
-                            <Award className="w-3.5 h-3.5" />
-                            <span>
-                              {userRole === 'trainee' ? 'Preceptor Sign-off (PIN)' : 'Sign Formative Sheet'}
-                            </span>
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePreceptorSignature(log)}
+                            className="inline-flex items-center gap-1 px-3 py-1.5 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-800 rounded-lg"
+                          >
+                            <RotateCcw className="w-3 h-3" />
+                            <span>Confirm Remove</span>
                           </button>
                         </div>
-                      )}
-                    </div>
+                      </div>
+                    )}
 
                     {/* Competency Demonstrated Checkboxes */}
                     <div className="space-y-1 font-sans text-xs">
@@ -1201,12 +1286,24 @@ export function PartIIDetailedLogSheets({
           setIsPinModalOpen(false);
           onStaffAuthenticated?.(preceptor, enteredPin);
           if (pendingLogToSign) {
-            openPreceptorSigningModal(pendingLogToSign, preceptor);
+            if (pinActionMode === 'remove_sign') {
+              handleRemovePreceptorSignature(pendingLogToSign);
+            } else {
+              openPreceptorSigningModal(pendingLogToSign, preceptor);
+            }
             setPendingLogToSign(null);
           }
         }}
-        title="Preceptor / Mentor Security Authorization"
-        subtitle="Only designated clinical preceptors or mentors can evaluate this activity and sign."
+        title={
+          pinActionMode === 'remove_sign'
+            ? 'Preceptor Authorization: Remove Mistake Signature'
+            : 'Preceptor / Mentor Security Authorization'
+        }
+        subtitle={
+          pinActionMode === 'remove_sign'
+            ? 'Enter your assigned Preceptor / Mentor PIN to remove this mistake signature and return the log status to Pending.'
+            : 'Only designated clinical preceptors or mentors can evaluate this activity and sign.'
+        }
       />
     </div>
   );

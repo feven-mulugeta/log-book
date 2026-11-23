@@ -76,6 +76,8 @@ export interface DetailedActivityLogSheet {
   removedAttachmentIds?: string[];
   // 3. Preceptor / Mentor Feedback & Formative Evaluation
   preceptorSignoff?: PreceptorSignoff;
+  signoffUpdatedAt?: string;
+  signoffRevokedAt?: string;
   status: 'Pending' | 'Met';
   source: 'manual' | 'ocr_scan';
   createdAt: string;

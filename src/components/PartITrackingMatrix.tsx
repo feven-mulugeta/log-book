@@ -12,6 +12,8 @@ import {
   MapPin,
   Users,
   ArrowRightLeft,
+  RotateCcw,
+  AlertCircle,
 } from 'lucide-react';
 import { DetailedActivityLogSheet, NCEPSessionDefinition, SubCompetencyId, RegisteredPreceptor } from '../types/nursing';
 import { NCEP_SESSIONS_DEFINITIONS } from '../data/ncepData';
@@ -41,7 +43,9 @@ export function PartITrackingMatrix({
   authenticatedPreceptor = null,
 }: PartITrackingMatrixProps) {
   const [pinModalOpen, setPinModalOpen] = useState(false);
+  const [pinModalAction, setPinModalAction] = useState<'sign' | 'unsign'>('sign');
   const [sessionToSign, setSessionToSign] = useState<number | null>(null);
+  const [confirmUnsignSession, setConfirmUnsignSession] = useState<number | null>(null);
 
   // Group sessions by sub-competency
   const subCompetencies: { id: SubCompetencyId; title: string; sessions: NCEPSessionDefinition[] }[] = [
@@ -94,16 +98,18 @@ export function PartITrackingMatrix({
     }
 
     if (currentMet) {
-      // Toggle back to Pending (requires preceptor role or PIN)
+      // Remove mistake signature & revert back to Pending (requires confirmation or PIN)
       if (userRole === 'trainee') {
+        setPinModalAction('unsign');
         setSessionToSign(sessionNumber);
         setPinModalOpen(true);
       } else {
-        onQuickPreceptorSign(sessionNumber, 'Pending', authenticatedPreceptor || undefined);
+        setConfirmUnsignSession(sessionNumber);
       }
     } else {
       // Sign as Met: requires preceptor authorization PIN if in trainee mode
       if (userRole === 'trainee') {
+        setPinModalAction('sign');
         setSessionToSign(sessionNumber);
         setPinModalOpen(true);
       } else {
@@ -277,7 +283,7 @@ export function PartITrackingMatrix({
                             onClick={() => handleStatusClick(session.sessionNumber, isMet)}
                             title={
                               isMet
-                                ? 'Competency verified as Met. Click to review or toggle (Preceptor PIN required).'
+                                ? 'Competency verified as Met. Signed by mistake? Click to remove signature and return to Pending (Preceptor PIN required).'
                                 : 'Click to authorize and sign as Met (Preceptor PIN required).'
                             }
                             className={`inline-flex items-center gap-1 font-bold px-2 py-0.5 rounded text-[11px] transition-all hover:scale-105 cursor-pointer ${
@@ -299,7 +305,7 @@ export function PartITrackingMatrix({
                             )}
                           </button>
                           <span className="block text-[9px] text-slate-400 mt-0.5">
-                            {isMet ? 'Verified' : 'Preceptor PIN'}
+                            {isMet ? 'Verified · Undo' : 'Preceptor PIN'}
                           </span>
                         </td>
 
@@ -391,6 +397,57 @@ export function PartITrackingMatrix({
         </div>
       </div>
 
+      {/* Confirm Remove Mistake Signature Modal (Preceptor / Lead Educator mode) */}
+      {confirmUnsignSession !== null && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+          <div className="w-full max-w-md bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden">
+            <div className="p-4 bg-rose-900 text-white flex items-center gap-2.5">
+              <div className="p-1.5 bg-rose-800 rounded-lg">
+                <RotateCcw className="w-4 h-4 text-rose-200" />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold">Remove Mistake Signature</h3>
+                <p className="text-[11px] text-rose-200">
+                  Session {confirmUnsignSession} · Revert status from Met back to Pending
+                </p>
+              </div>
+            </div>
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl flex items-start gap-2.5 text-amber-950">
+                <AlertCircle className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                <p className="leading-relaxed">
+                  Are you sure you want to remove the preceptor signature for{' '}
+                  <strong>Session {confirmUnsignSession}</strong>? This clears the evaluator signature and sets the session back to <strong>Pending</strong> across all devices.
+                </p>
+              </div>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setConfirmUnsignSession(null)}
+                  className="px-4 py-2 text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 rounded-xl"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const targetSession = confirmUnsignSession;
+                    setConfirmUnsignSession(null);
+                    if (targetSession !== null && onQuickPreceptorSign) {
+                      onQuickPreceptorSign(targetSession, 'Pending', authenticatedPreceptor || undefined);
+                    }
+                  }}
+                  className="inline-flex items-center gap-1.5 px-4 py-2 text-xs font-semibold text-white bg-rose-700 hover:bg-rose-800 rounded-xl"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Remove Signature</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Preceptor Security Authorization PIN Modal */}
       <PreceptorPinModal
         isOpen={pinModalOpen}
@@ -399,11 +456,19 @@ export function PartITrackingMatrix({
           setSessionToSign(null);
         }}
         onSuccess={handlePinSuccess}
-        title="Preceptor / Mentor Verification Required"
+        title={
+          pinModalAction === 'unsign'
+            ? 'Preceptor Authorization: Remove Mistake Signature'
+            : 'Preceptor / Mentor Verification Required'
+        }
         subtitle={
-          sessionToSign
-            ? `Only designated clinical preceptors or mentors can verify Session ${sessionToSign} and update its status to Met.`
-            : 'Only designated clinical preceptors or mentors can update competency statuses.'
+          pinModalAction === 'unsign'
+            ? sessionToSign
+              ? `Enter your assigned Preceptor / Mentor PIN to remove the signature on Session ${sessionToSign} and return its status to Pending.`
+              : 'Enter your assigned Preceptor / Mentor PIN to remove a signature signed by mistake.'
+            : sessionToSign
+              ? `Only designated clinical preceptors or mentors can verify Session ${sessionToSign} and update its status to Met.`
+              : 'Only designated clinical preceptors or mentors can update competency statuses.'
         }
       />
     </div>
