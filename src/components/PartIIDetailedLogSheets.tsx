@@ -16,6 +16,7 @@ import {
   Award,
   Lock,
   Trash2,
+  MapPin,
 } from 'lucide-react';
 import {
   DetailedActivityLogSheet,
@@ -29,7 +30,11 @@ import { NCEP_SESSIONS_DEFINITIONS } from '../data/ncepData';
 import { SignaturePad } from './SignaturePad';
 import { EvidenceAttachmentModal } from './EvidenceAttachmentModal';
 import { PreceptorPinModal } from './PreceptorPinModal';
-import { getStoredPreceptors } from '../utils/storage';
+import {
+  getStoredPreceptors,
+  resolvePreceptorWard,
+  CLINICAL_WARD_PRESETS,
+} from '../utils/storage';
 
 interface PartIIDetailedLogSheetsProps {
   logs: DetailedActivityLogSheet[];
@@ -40,6 +45,7 @@ interface PartIIDetailedLogSheetsProps {
   activeSessionToOpen?: number | null;
   onClearActiveSession?: () => void;
   userRole: 'trainee' | 'preceptor' | 'lead_educator';
+  authenticatedPreceptor?: RegisteredPreceptor | null;
   traineeName?: string;
   traineeId?: string;
 }
@@ -53,6 +59,7 @@ export function PartIIDetailedLogSheets({
   activeSessionToOpen,
   onClearActiveSession,
   userRole,
+  authenticatedPreceptor = null,
   traineeName,
   traineeId,
 }: PartIIDetailedLogSheetsProps) {
@@ -77,8 +84,18 @@ export function PartIIDetailedLogSheets({
   const [signingLog, setSigningLog] = useState<DetailedActivityLogSheet | null>(null);
   const [isPinModalOpen, setIsPinModalOpen] = useState(false);
   const [pendingLogToSign, setPendingLogToSign] = useState<DetailedActivityLogSheet | null>(null);
-  const [preceptorName, setPreceptorName] = useState(() => getStoredPreceptors()[0]?.name || 'Abaynesh Mekonnen');
-  const [preceptorInitials, setPreceptorInitials] = useState(() => getStoredPreceptors()[0]?.initials || 'AM');
+  const [preceptorName, setPreceptorName] = useState(
+    () => authenticatedPreceptor?.name || getStoredPreceptors()[0]?.name || 'Abaynesh Mekonnen'
+  );
+  const [preceptorInitials, setPreceptorInitials] = useState(
+    () => authenticatedPreceptor?.initials || getStoredPreceptors()[0]?.initials || 'AM'
+  );
+  const [preceptorWard, setPreceptorWard] = useState(
+    () =>
+      authenticatedPreceptor?.wardDepartment ||
+      getStoredPreceptors()[0]?.wardDepartment ||
+      ''
+  );
   const [competencyDemonstrated, setCompetencyDemonstrated] = useState<CompetencyRating>('Satisfactory');
   const [preceptorComments, setPreceptorComments] = useState(
     'Demonstrated sound clinical judgment, followed aseptic principles and accurately prioritized patient needs.'
@@ -88,15 +105,27 @@ export function PartIIDetailedLogSheets({
 
   const openPreceptorSigningModal = (log: DetailedActivityLogSheet, preceptor?: RegisteredPreceptor) => {
     setSigningLog(log);
-    if (preceptor) {
-      setPreceptorName(preceptor.name);
-      setPreceptorInitials(preceptor.initials);
+    const activeStaff = preceptor || authenticatedPreceptor || undefined;
+    if (activeStaff) {
+      setPreceptorName(activeStaff.name);
+      setPreceptorInitials(activeStaff.initials);
+      setPreceptorWard(activeStaff.wardDepartment || '');
       setPreceptorComments(
-        `Competency demonstrated and validated by ${preceptor.name} (${preceptor.title} · ${preceptor.wardDepartment}).`
+        `Competency demonstrated and validated by ${activeStaff.name} (${activeStaff.title} · ${activeStaff.wardDepartment}).`
       );
     } else {
-      setPreceptorName(log.preceptorSignoff?.preceptorName || getStoredPreceptors()[0]?.name || 'Abaynesh Mekonnen');
-      setPreceptorInitials(log.preceptorSignoff?.preceptorInitials || getStoredPreceptors()[0]?.initials || 'AM');
+      const stored = getStoredPreceptors();
+      const fallbackName = log.preceptorSignoff?.preceptorName || stored[0]?.name || 'Abaynesh Mekonnen';
+      const fallbackInitials = log.preceptorSignoff?.preceptorInitials || stored[0]?.initials || 'AM';
+      const resolvedWard = resolvePreceptorWard(
+        fallbackName,
+        fallbackInitials,
+        log.preceptorSignoff?.preceptorWard,
+        stored
+      );
+      setPreceptorName(fallbackName);
+      setPreceptorInitials(fallbackInitials);
+      setPreceptorWard(resolvedWard);
       setPreceptorComments(
         log.preceptorSignoff?.comments ||
         'Demonstrated sound clinical judgment, followed aseptic principles and accurately prioritized patient needs.'
@@ -112,7 +141,7 @@ export function PartIIDetailedLogSheets({
       setPendingLogToSign(log);
       setIsPinModalOpen(true);
     } else {
-      openPreceptorSigningModal(log);
+      openPreceptorSigningModal(log, authenticatedPreceptor || undefined);
     }
   };
 
@@ -204,10 +233,15 @@ export function PartIIDetailedLogSheets({
   const handleCompletePreceptorSign = () => {
     if (!signingLog || !signatureDataUrl) return;
 
+    const cleanName = preceptorName.trim() || 'Clinical Preceptor';
+    const cleanInitials = preceptorInitials.trim() || 'CP';
+    const resolvedWard = resolvePreceptorWard(cleanName, cleanInitials, preceptorWard.trim());
+
     const signoff: PreceptorSignoff = {
       isSigned: true,
-      preceptorName: preceptorName.trim() || 'Clinical Preceptor',
-      preceptorInitials: preceptorInitials.trim() || 'CP',
+      preceptorName: cleanName,
+      preceptorWard: resolvedWard,
+      preceptorInitials: cleanInitials,
       signatureDataUrl,
       dateSigned: new Date().toISOString().slice(0, 10),
       competencyDemonstrated,
@@ -330,29 +364,42 @@ export function PartIIDetailedLogSheets({
                         <strong>Clinical Setting / Ward:</strong>{' '}
                         <span>{log.clinicalSettingWard}</span>
                       </p>
-                      {log.preceptorSignoff?.isSigned ? (
-                        <div className="sm:col-span-2 mt-1 p-2.5 bg-teal-50 border border-teal-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
-                          <div className="flex items-center gap-2">
-                            <CheckCircle2 className="w-4 h-4 text-teal-700 shrink-0" />
-                            <span className="text-teal-950 font-medium">
-                              Verified &amp; Signed by Preceptor / Mentor:{' '}
-                              <strong className="text-teal-900 font-bold underline decoration-teal-400">
-                                {log.preceptorSignoff.preceptorName}
-                              </strong>
-                              {log.preceptorSignoff.preceptorInitials && (
-                                <span className="ml-1 text-[11px] font-mono text-teal-800">
-                                  ({log.preceptorSignoff.preceptorInitials})
+                      {log.preceptorSignoff?.isSigned ? (() => {
+                        const evaluatorWard = resolvePreceptorWard(
+                          log.preceptorSignoff.preceptorName,
+                          log.preceptorSignoff.preceptorInitials,
+                          log.preceptorSignoff.preceptorWard
+                        );
+                        return (
+                          <div className="sm:col-span-2 mt-1 p-2.5 bg-teal-50 border border-teal-200 rounded-xl flex flex-wrap items-center justify-between gap-2 text-xs">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <CheckCircle2 className="w-4 h-4 text-teal-700 shrink-0" />
+                              <span className="text-teal-950 font-medium">
+                                Verified &amp; Signed by Preceptor / Mentor:{' '}
+                                <strong className="text-teal-900 font-bold underline decoration-teal-400">
+                                  {log.preceptorSignoff.preceptorName}
+                                </strong>
+                                {log.preceptorSignoff.preceptorInitials && (
+                                  <span className="ml-1 text-[11px] font-mono text-teal-800">
+                                    ({log.preceptorSignoff.preceptorInitials})
+                                  </span>
+                                )}
+                              </span>
+                              {evaluatorWard && (
+                                <span className="inline-flex items-center gap-1 text-[11px] font-semibold text-teal-900 bg-white px-2 py-0.5 rounded-md border border-teal-200">
+                                  <MapPin className="w-3 h-3 text-teal-700" />
+                                  <span>Ward: {evaluatorWard}</span>
                                 </span>
                               )}
-                            </span>
+                            </div>
+                            {log.preceptorSignoff.dateSigned && (
+                              <span className="text-[11px] font-mono font-semibold text-teal-800 bg-white px-2 py-0.5 rounded border border-teal-200">
+                                Signed: {log.preceptorSignoff.dateSigned}
+                              </span>
+                            )}
                           </div>
-                          {log.preceptorSignoff.dateSigned && (
-                            <span className="text-[11px] font-mono font-semibold text-teal-800 bg-white px-2 py-0.5 rounded border border-teal-200">
-                              Signed: {log.preceptorSignoff.dateSigned}
-                            </span>
-                          )}
-                        </div>
-                      ) : (
+                        );
+                      })() : (
                         <div className="sm:col-span-2 mt-1 p-2 bg-slate-100/80 border border-slate-200 rounded-lg flex items-center gap-2 text-[11px] text-slate-500">
                           <Clock className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                           <span>Awaiting assigned clinical preceptor or mentor evaluation and digital sign-off.</span>
@@ -584,20 +631,35 @@ export function PartIIDetailedLogSheets({
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 pt-3 border-t border-slate-200 font-sans text-xs">
                       <div className="p-3 bg-slate-50/80 rounded-xl border border-slate-200 space-y-1">
                         <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
-                          • Evaluator / Mentor Name:
+                          • Evaluator / Mentor Name &amp; Ward:
                         </span>
-                        {log.preceptorSignoff?.preceptorName ? (
-                          <div className="space-y-0.5">
-                            <p className="font-bold text-teal-950 text-sm">
-                              {log.preceptorSignoff.preceptorName}
-                            </p>
-                            {log.preceptorSignoff.preceptorInitials && (
-                              <p className="text-[10px] text-teal-700 font-mono font-semibold">
-                                Initials: {log.preceptorSignoff.preceptorInitials}
+                        {log.preceptorSignoff?.preceptorName ? (() => {
+                          const evaluatorWard = resolvePreceptorWard(
+                            log.preceptorSignoff.preceptorName,
+                            log.preceptorSignoff.preceptorInitials,
+                            log.preceptorSignoff.preceptorWard
+                          );
+                          return (
+                            <div className="space-y-1">
+                              <p className="font-bold text-teal-950 text-sm">
+                                {log.preceptorSignoff.preceptorName}
                               </p>
-                            )}
-                          </div>
-                        ) : (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                {log.preceptorSignoff.preceptorInitials && (
+                                  <span className="text-[10px] text-teal-700 font-mono font-semibold">
+                                    Initials: {log.preceptorSignoff.preceptorInitials}
+                                  </span>
+                                )}
+                                {evaluatorWard && (
+                                  <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-slate-700 bg-white px-1.5 py-0.5 rounded border border-slate-200">
+                                    <MapPin className="w-2.5 h-2.5 text-teal-700" />
+                                    <span>Ward: {evaluatorWard}</span>
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })() : (
                           <p className="font-mono text-slate-400 mt-1 italic">[Not yet evaluated]</p>
                         )}
                       </div>
@@ -938,7 +1000,7 @@ export function PartIIDetailedLogSheets({
               </div>
 
               {/* Preceptor Credentials */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block font-bold text-slate-800 mb-1">
                     • Preceptor / Mentor Name:
@@ -953,6 +1015,9 @@ export function PartIIDetailedLogSheets({
                       const matched = getStoredPreceptors().find((p) => p.name === val);
                       if (matched) {
                         setPreceptorInitials(matched.initials);
+                        if (matched.wardDepartment) {
+                          setPreceptorWard(matched.wardDepartment);
+                        }
                       }
                     }}
                     className="w-full px-3 py-2 rounded-xl border border-slate-300 font-semibold"
@@ -962,6 +1027,24 @@ export function PartIIDetailedLogSheets({
                       <option key={p.id} value={p.name}>
                         {p.title} ({p.wardDepartment})
                       </option>
+                    ))}
+                  </datalist>
+                </div>
+                <div>
+                  <label className="block font-bold text-slate-800 mb-1">
+                    • Permanent Ward:
+                  </label>
+                  <input
+                    type="text"
+                    list="ncep-ward-presets-part2"
+                    placeholder="e.g. Medical, NICU, Surgical"
+                    value={preceptorWard}
+                    onChange={(e) => setPreceptorWard(e.target.value)}
+                    className="w-full px-3 py-2 rounded-xl border border-slate-300 font-medium"
+                  />
+                  <datalist id="ncep-ward-presets-part2">
+                    {CLINICAL_WARD_PRESETS.map((w) => (
+                      <option key={w} value={w} />
                     ))}
                   </datalist>
                 </div>

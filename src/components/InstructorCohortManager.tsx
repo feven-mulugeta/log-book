@@ -32,6 +32,8 @@ import {
   Copy,
   ArrowRightLeft,
   Paperclip,
+  MapPin,
+  Save,
 } from 'lucide-react';
 import {
   CohortStudentRecord,
@@ -52,6 +54,7 @@ import {
   DEFAULT_REGISTERED_PRECEPTORS,
   OFFICIAL_IMPORTED_PRECEPTORS,
   FULL_15_PRECEPTORS_ROSTER,
+  CLINICAL_WARD_PRESETS,
   BLANK_TRAINEE_INFO,
   BLANK_FINAL_SIGNOFF,
   UserRole,
@@ -79,6 +82,11 @@ interface InstructorCohortManagerProps {
   onImportStudentDossier: (record: CohortStudentRecord) => void;
   onImportMultipleStudentDossiers?: (records: CohortStudentRecord[]) => void;
   onUpdateStudent?: (student: CohortStudentRecord) => void;
+  onSavePreceptorsToCloud?: (
+    updatedPreceptors: RegisteredPreceptor[],
+    actionTitle?: string,
+    deletedIds?: string[]
+  ) => void | Promise<void>;
   userRole?: UserRole;
   onRequireLeadEducatorAuth?: () => void;
 }
@@ -92,6 +100,7 @@ export function InstructorCohortManager({
   onImportStudentDossier,
   onImportMultipleStudentDossiers,
   onUpdateStudent,
+  onSavePreceptorsToCloud,
   userRole = 'lead_educator',
   onRequireLeadEducatorAuth,
 }: InstructorCohortManagerProps) {
@@ -229,8 +238,18 @@ export function InstructorCohortManager({
         setPreceptorsList(remoteList);
       }
     });
+    const handlePreceptorsHydrated = (e: Event) => {
+      const detail = (e as CustomEvent<RegisteredPreceptor[]>).detail;
+      if (Array.isArray(detail) && detail.length > 0) {
+        setPreceptorsList(detail);
+      } else {
+        setPreceptorsList(getStoredPreceptors());
+      }
+    };
+    window.addEventListener('ncep-preceptors-updated', handlePreceptorsHydrated);
     return () => {
       unsub();
+      window.removeEventListener('ncep-preceptors-updated', handlePreceptorsHydrated);
     };
   }, []);
 
@@ -245,6 +264,13 @@ export function InstructorCohortManager({
   // Preceptors search & filtering
   const [preceptorSearchQuery, setPreceptorSearchQuery] = useState('');
   const [preceptorRoleFilter, setPreceptorRoleFilter] = useState<'all' | 'preceptor' | 'mentor' | 'lead_educator'>('all');
+
+  // Permanent Ward assignment state (inline + bulk modal)
+  const [inlineWardEditId, setInlineWardEditId] = useState<string | null>(null);
+  const [inlineWardValue, setInlineWardValue] = useState('');
+  const [isBulkWardModalOpen, setIsBulkWardModalOpen] = useState(false);
+  const [bulkWardDrafts, setBulkWardDrafts] = useState<Record<string, string>>({});
+  const [confirmResetPreceptors, setConfirmResetPreceptors] = useState(false);
 
   // Batch import state
   const [isBatchModalOpen, setIsBatchModalOpen] = useState(false);
@@ -439,7 +465,7 @@ export function InstructorCohortManager({
       URL.revokeObjectURL(url);
     } catch (err) {
       console.error('Failed to generate Word template:', err);
-      alert('Unable to generate Word template on this device.');
+      setDossierImportError('Unable to generate Word template on this device.');
     }
   };
 
@@ -912,30 +938,36 @@ export function InstructorCohortManager({
       if (allExtracted.length > 0) {
         handleExecuteImport(allExtracted);
       } else {
-        alert('Could not detect valid student roster or dossier data in the selected file.');
+        setDossierImportError('Could not detect valid student roster or dossier data in the selected file.');
+        setIsDossierModalOpen(true);
       }
     } catch (err) {
-      alert('Failed to read or parse file. Please verify Word (.docx), CSV, or JSON format.');
+      setDossierImportError('Failed to read or parse file. Please verify Word (.docx), CSV, or JSON format.');
+      setIsDossierModalOpen(true);
     }
     e.target.value = '';
   };
 
-  useEffect(() => {
-    const unsub = cloudSync.onPreceptorsUpdated((updated) => {
-      if (Array.isArray(updated) && updated.length > 0) {
-        setPreceptorsList(updated);
-      }
-    });
-    return () => {
-      unsub();
-    };
-  }, []);
+  const persistUpdatedPreceptors = (
+    updatedList: RegisteredPreceptor[],
+    actionTitle: string,
+    deletedIds?: string[]
+  ) => {
+    setPreceptorsList(updatedList);
+    saveStoredPreceptors(updatedList);
+    if (onSavePreceptorsToCloud) {
+      onSavePreceptorsToCloud(updatedList, actionTitle, deletedIds);
+    } else {
+      cloudSync.syncPreceptors(updatedList);
+    }
+  };
 
   const handlePopulate15Preceptors = () => {
-    setPreceptorsList(DEFAULT_REGISTERED_PRECEPTORS);
-    saveStoredPreceptors(DEFAULT_REGISTERED_PRECEPTORS);
-    cloudSync.syncPreceptors(DEFAULT_REGISTERED_PRECEPTORS);
-    setBatchImportNotification('Successfully loaded all 16 faculty, preceptors & mentors with Lead Educator Mr. Yohannes Ayalew!');
+    persistUpdatedPreceptors(
+      DEFAULT_REGISTERED_PRECEPTORS,
+      'Loaded Official 17-Member Faculty Roster'
+    );
+    setBatchImportNotification('Successfully loaded all 17 faculty, preceptors & mentors!');
     setTimeout(() => setBatchImportNotification(null), 4000);
   };
 
@@ -1014,7 +1046,7 @@ export function InstructorCohortManager({
   const handleExecuteBatchImport = (mode: 'replace' | 'append') => {
     const parsed = parseBatchText(batchRawText);
     if (parsed.length === 0) {
-      alert('Please enter at least one valid preceptor line.');
+      setBatchImportNotification('Please enter at least one valid preceptor or mentor line before importing.');
       return;
     }
 
@@ -1025,9 +1057,10 @@ export function InstructorCohortManager({
       newList = [...preceptorsList, ...parsed];
     }
 
-    setPreceptorsList(newList);
-    saveStoredPreceptors(newList);
-    cloudSync.syncPreceptors(newList);
+    persistUpdatedPreceptors(
+      newList,
+      `Batch Imported ${parsed.length} Preceptors & Mentors with Permanent Wards`
+    );
     setIsBatchModalOpen(false);
     setBatchImportNotification(`Successfully imported ${parsed.length} preceptors! Directory now has ${newList.length} total.`);
     setTimeout(() => setBatchImportNotification(null), 4000);
@@ -1111,13 +1144,17 @@ export function InstructorCohortManager({
       return;
     }
     if (preceptorsList.length <= 1) {
-      alert('At least one instructor must remain registered.');
+      setBatchImportNotification('At least one instructor must remain registered in the directory.');
+      setTimeout(() => setBatchImportNotification(null), 4000);
       return;
     }
+    const target = preceptorsList.find((p) => p.id === id);
     const filtered = preceptorsList.filter((p) => p.id !== id);
-    setPreceptorsList(filtered);
-    saveStoredPreceptors(filtered);
-    cloudSync.syncPreceptors(filtered);
+    persistUpdatedPreceptors(
+      filtered,
+      `Removed Instructor (${target?.name || id})`,
+      [id]
+    );
   };
 
   const handleSavePreceptor = (e: React.FormEvent) => {
@@ -1162,30 +1199,95 @@ export function InstructorCohortManager({
       updatedList = [...preceptorsList, newPreceptor];
     }
 
-    setPreceptorsList(updatedList);
-    saveStoredPreceptors(updatedList);
-    cloudSync.syncPreceptors(updatedList);
-    setIsPreceptorModalOpen(false);
     const roleLabel =
       precRole === 'mentor'
         ? 'Clinical Mentor'
         : precRole === 'lead_educator'
         ? 'Lead Clinical Educator'
         : 'Clinical Preceptor';
+    persistUpdatedPreceptors(
+      updatedList,
+      editingPreceptorId
+        ? `Updated ${roleLabel} Permanent Ward (${precName.trim()} · ${precWard.trim()})`
+        : `Registered ${roleLabel} (${precName.trim()} · ${precWard.trim()} Ward)`
+    );
+    setIsPreceptorModalOpen(false);
     setBatchImportNotification(
       editingPreceptorId
-        ? `Updated ${roleLabel}: ${precName.trim()} (PIN: ${precPin.trim()})`
-        : `Successfully registered ${roleLabel}: ${precName.trim()} (PIN: ${precPin.trim()}). Synced across all devices.`
+        ? `Updated ${roleLabel}: ${precName.trim()} — Permanent Ward: ${precWard.trim()}`
+        : `Successfully registered ${roleLabel}: ${precName.trim()} — Permanent Ward: ${precWard.trim()}`
     );
     setTimeout(() => setBatchImportNotification(null), 5000);
   };
 
-  const handleResetPreceptorsToDefault = () => {
-    if (confirm('Reset the instructor registry to AAU standard preceptors?')) {
-      setPreceptorsList(DEFAULT_REGISTERED_PRECEPTORS);
-      saveStoredPreceptors(DEFAULT_REGISTERED_PRECEPTORS);
-      cloudSync.syncPreceptors(DEFAULT_REGISTERED_PRECEPTORS);
+  const handleStartInlineWardEdit = (p: RegisteredPreceptor) => {
+    if (!isLeadEducator) {
+      onRequireLeadEducatorAuth?.();
+      return;
     }
+    setInlineWardEditId(p.id);
+    setInlineWardValue(p.wardDepartment || '');
+  };
+
+  const handleSaveInlineWard = (p: RegisteredPreceptor) => {
+    const cleanWard = inlineWardValue.trim();
+    if (!cleanWard) return;
+    const updatedList = preceptorsList.map((item) =>
+      item.id === p.id ? { ...item, wardDepartment: cleanWard } : item
+    );
+    persistUpdatedPreceptors(
+      updatedList,
+      `Permanent Ward Saved (${p.name} · ${cleanWard})`
+    );
+    setInlineWardEditId(null);
+    setInlineWardValue('');
+    setBatchImportNotification(
+      `Saved permanent ward "${cleanWard}" for ${p.name}. It will now appear automatically whenever they sign any logbook.`
+    );
+    setTimeout(() => setBatchImportNotification(null), 5000);
+  };
+
+  const handleOpenBulkWardModal = () => {
+    if (!isLeadEducator) {
+      onRequireLeadEducatorAuth?.();
+      return;
+    }
+    const drafts: Record<string, string> = {};
+    preceptorsList.forEach((p) => {
+      drafts[p.id] = p.wardDepartment || '';
+    });
+    setBulkWardDrafts(drafts);
+    setIsBulkWardModalOpen(true);
+  };
+
+  const handleSaveAllBulkWards = (e: React.FormEvent) => {
+    e.preventDefault();
+    const updatedList = preceptorsList.map((p) => {
+      const nextWard = (bulkWardDrafts[p.id] ?? p.wardDepartment ?? '').trim();
+      return {
+        ...p,
+        wardDepartment: nextWard || p.wardDepartment,
+      };
+    });
+    persistUpdatedPreceptors(
+      updatedList,
+      `Saved Permanent Wards for All ${updatedList.length} Preceptors & Mentors`
+    );
+    setIsBulkWardModalOpen(false);
+    setBatchImportNotification(
+      `Permanently updated clinical wards for all ${updatedList.length} preceptors, mentors & educators!`
+    );
+    setTimeout(() => setBatchImportNotification(null), 5000);
+  };
+
+  const handleConfirmResetPreceptorsToDefault = () => {
+    persistUpdatedPreceptors(
+      DEFAULT_REGISTERED_PRECEPTORS,
+      'Reset Faculty Directory to AAU Defaults'
+    );
+    setConfirmResetPreceptors(false);
+    setBatchImportNotification('Instructor registry reset to standard AAU defaults.');
+    setTimeout(() => setBatchImportNotification(null), 4000);
   };
 
   const handleCreateStudent = (e: React.FormEvent) => {
@@ -1335,6 +1437,16 @@ export function InstructorCohortManager({
           <div className="flex flex-wrap items-center gap-2 shrink-0">
             {isLeadEducator && (
               <>
+                <button
+                  type="button"
+                  onClick={handleOpenBulkWardModal}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold text-teal-950 bg-teal-100 hover:bg-teal-200 border border-teal-300 rounded-xl transition-colors shadow-2xs cursor-pointer"
+                  title="Assign or update permanent clinical wards for all preceptors and mentors at once"
+                >
+                  <MapPin className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Assign All Wards (Permanent)</span>
+                </button>
+
                 <button
                   type="button"
                   onClick={handlePopulate15Preceptors}
@@ -1565,9 +1677,62 @@ export function InstructorCohortManager({
                         {preceptor.initials}
                       </span>
                     </div>
-                    <p className="text-[11px] text-slate-500 mt-1.5">
-                      Ward: <span className="text-slate-800 font-medium">{preceptor.wardDepartment}</span>
-                    </p>
+                    {inlineWardEditId === preceptor.id ? (
+                      <div className="mt-2 p-2 bg-white border border-teal-300 rounded-lg space-y-1.5">
+                        <label className="block text-[10px] font-bold text-teal-900">
+                          Permanent Clinical Ward:
+                        </label>
+                        <input
+                          type="text"
+                          list="ncep-ward-presets-inline"
+                          value={inlineWardValue}
+                          onChange={(e) => setInlineWardValue(e.target.value)}
+                          placeholder="e.g. Medical ICU, NICU, Surgical..."
+                          className="w-full px-2 py-1 text-xs rounded border border-teal-300 focus:outline-none focus:ring-2 focus:ring-teal-600"
+                          autoFocus
+                        />
+                        <div className="flex items-center justify-end gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setInlineWardEditId(null);
+                              setInlineWardValue('');
+                            }}
+                            className="px-2 py-0.5 text-[10px] font-semibold text-slate-600 hover:bg-slate-100 rounded cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleSaveInlineWard(preceptor)}
+                            className="px-2.5 py-0.5 text-[10px] font-bold text-white bg-teal-700 hover:bg-teal-800 rounded flex items-center gap-1 cursor-pointer"
+                          >
+                            <Save className="w-2.5 h-2.5" />
+                            <span>Save Ward</span>
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div className="mt-2 flex items-center justify-between gap-2 bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/80">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <MapPin className="w-3 h-3 text-teal-700 shrink-0" />
+                          <span className="text-[11px] text-slate-600 shrink-0">Ward:</span>
+                          <span className="text-[11px] font-bold text-teal-950 truncate" title={preceptor.wardDepartment}>
+                            {preceptor.wardDepartment || 'Unassigned'}
+                          </span>
+                        </div>
+                        {isLeadEducator && (
+                          <button
+                            type="button"
+                            onClick={() => handleStartInlineWardEdit(preceptor)}
+                            className="text-[10px] font-semibold text-teal-700 hover:text-teal-950 hover:underline shrink-0 cursor-pointer"
+                            title="Assign or change this instructor's permanent ward"
+                          >
+                            Edit Ward
+                          </button>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div className="pt-2 border-t border-slate-200/80 flex items-center justify-between">
@@ -1605,6 +1770,11 @@ export function InstructorCohortManager({
                   </div>
                 </div>
               ))}
+              <datalist id="ncep-ward-presets-inline">
+                {CLINICAL_WARD_PRESETS.map((w) => (
+                  <option key={w} value={w} />
+                ))}
+              </datalist>
             </div>
           );
         })()}
@@ -1642,13 +1812,32 @@ export function InstructorCohortManager({
                   <CheckCircle2 className="w-3 h-3" /> Saved
                 </span>
               )}
-              <button
-                type="button"
-                onClick={handleResetPreceptorsToDefault}
-                className="text-[11px] text-teal-700 hover:text-teal-950 underline ml-2 cursor-pointer"
-              >
-                Reset to Defaults
-              </button>
+              {confirmResetPreceptors ? (
+                <div className="flex items-center gap-1.5 ml-2">
+                  <button
+                    type="button"
+                    onClick={handleConfirmResetPreceptorsToDefault}
+                    className="px-2 py-0.5 text-[11px] font-bold text-white bg-rose-600 hover:bg-rose-700 rounded cursor-pointer"
+                  >
+                    Confirm Reset
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setConfirmResetPreceptors(false)}
+                    className="text-[11px] text-slate-600 hover:underline cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setConfirmResetPreceptors(true)}
+                  className="text-[11px] text-teal-700 hover:text-teal-950 underline ml-2 cursor-pointer"
+                >
+                  Reset to Defaults
+                </button>
+              )}
             </form>
           </div>
         ) : (
@@ -2402,15 +2591,27 @@ export function InstructorCohortManager({
               </div>
 
               <div>
-                <label className="block font-bold text-slate-800 mb-1">Ward / Hospital Department:</label>
+                <label className="block font-bold text-slate-800 mb-1 flex items-center gap-1.5">
+                  <MapPin className="w-3.5 h-3.5 text-teal-700" />
+                  <span>Permanent Clinical Ward / Hospital Department:</span>
+                </label>
                 <input
                   type="text"
                   required
-                  placeholder="e.g. Medical ICU / Emergency Center, TASH"
+                  list="ncep-ward-presets-modal"
+                  placeholder="e.g. Medical ICU, Surgical, NICU, Medical"
                   value={precWard}
                   onChange={(e) => setPrecWard(e.target.value)}
                   className="w-full px-3 py-2 rounded-xl border border-slate-300"
                 />
+                <datalist id="ncep-ward-presets-modal">
+                  {CLINICAL_WARD_PRESETS.map((w) => (
+                    <option key={w} value={w} />
+                  ))}
+                </datalist>
+                <p className="text-[10px] text-teal-800 mt-1">
+                  This permanent ward automatically appears whenever this instructor signs any trainee logbook session.
+                </p>
               </div>
 
               <div className="p-3 bg-teal-50 border border-teal-200 rounded-xl space-y-1.5">
@@ -3287,6 +3488,115 @@ export function InstructorCohortManager({
                   <CheckCircle2 className="w-3.5 h-3.5" />
                   <span>Save Student PIN</span>
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Bulk Assign Permanent Wards Modal (All Preceptors, Mentors & Lead Educators) */}
+      {isBulkWardModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs font-sans">
+          <div className="bg-white rounded-2xl max-w-3xl w-full shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]">
+            <div className="p-4 bg-teal-950 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <MapPin className="w-5 h-5 text-teal-300" />
+                <div>
+                  <h3 className="text-sm font-bold">
+                    Assign Permanent Clinical Wards for All Preceptors &amp; Mentors
+                  </h3>
+                  <p className="text-[11px] text-teal-200/90">
+                    Each assigned ward is saved permanently in Cloud DB and automatically stamped whenever they sign a logbook.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsBulkWardModalOpen(false)}
+                className="text-teal-200 hover:text-white p-1 rounded-lg cursor-pointer"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveAllBulkWards} className="flex flex-col flex-1 min-h-0">
+              <div className="p-5 overflow-y-auto space-y-2.5 text-xs flex-1">
+                <datalist id="ncep-ward-presets-bulk">
+                  {CLINICAL_WARD_PRESETS.map((w) => (
+                    <option key={w} value={w} />
+                  ))}
+                </datalist>
+
+                {preceptorsList.map((p, idx) => (
+                  <div
+                    key={`bulk-ward-${p.id}-${idx}`}
+                    className="grid grid-cols-1 sm:grid-cols-12 gap-2 items-center p-3 bg-slate-50 rounded-xl border border-slate-200"
+                  >
+                    <div className="sm:col-span-6 min-w-0">
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="font-bold text-slate-900 text-xs">{p.name}</span>
+                        <span
+                          className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${
+                            p.role === 'mentor'
+                              ? 'bg-purple-100 text-purple-900 border border-purple-200'
+                              : p.role === 'lead_educator'
+                              ? 'bg-amber-100 text-amber-950 border border-amber-200'
+                              : 'bg-teal-100 text-teal-900 border border-teal-200'
+                          }`}
+                        >
+                          {p.role === 'mentor'
+                            ? 'Mentor'
+                            : p.role === 'lead_educator'
+                            ? 'Lead Educator'
+                            : 'Preceptor'}
+                        </span>
+                        <span className="text-[10px] font-mono font-semibold text-slate-500">
+                          ({p.initials})
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 truncate mt-0.5">{p.title}</p>
+                    </div>
+
+                    <div className="sm:col-span-6">
+                      <input
+                        type="text"
+                        list="ncep-ward-presets-bulk"
+                        value={bulkWardDrafts[p.id] ?? p.wardDepartment ?? ''}
+                        onChange={(e) =>
+                          setBulkWardDrafts((prev) => ({
+                            ...prev,
+                            [p.id]: e.target.value,
+                          }))
+                        }
+                        placeholder="Enter or choose permanent clinical ward..."
+                        className="w-full px-3 py-1.5 text-xs rounded-xl border border-slate-300 bg-white focus:outline-none focus:ring-2 focus:ring-teal-700 font-medium text-slate-900"
+                        required
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-3 shrink-0 text-xs">
+                <span className="text-[11px] text-slate-500">
+                  Editing <strong>{preceptorsList.length}</strong> preceptors, mentors &amp; educators
+                </span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setIsBulkWardModalOpen(false)}
+                    className="px-4 py-2 font-semibold text-slate-600 hover:bg-slate-200 rounded-xl cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    className="px-5 py-2 font-bold text-white bg-teal-800 hover:bg-teal-900 rounded-xl shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  >
+                    <Save className="w-3.5 h-3.5" />
+                    <span>Save All Wards Permanently</span>
+                  </button>
+                </div>
               </div>
             </form>
           </div>

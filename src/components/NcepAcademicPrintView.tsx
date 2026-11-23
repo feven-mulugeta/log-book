@@ -5,6 +5,7 @@ import {
   FinalCompetencySignoff,
 } from '../types/nursing';
 import { NCEP_SESSIONS_DEFINITIONS } from '../data/ncepData';
+import { resolvePreceptorWard } from '../utils/storage';
 
 interface NcepAcademicPrintViewProps {
   traineeInfo: TraineeInformation;
@@ -183,16 +184,28 @@ export function NcepAcademicPrintView({
                           {log?.status === 'Met' ? 'Met' : 'Pending'}
                         </td>
                         <td className="p-2 text-center font-bold align-top text-[10px]">
-                          {log?.preceptorSignoff?.preceptorName ? (
-                            <div>
-                              <span>{log.preceptorSignoff.preceptorName}</span>
-                              {log.preceptorSignoff.preceptorInitials && (
-                                <span className="block font-mono text-[9px] text-gray-600">
-                                  ({log.preceptorSignoff.preceptorInitials})
-                                </span>
-                              )}
-                            </div>
-                          ) : (
+                          {log?.preceptorSignoff?.preceptorName ? (() => {
+                            const evaluatorWard = resolvePreceptorWard(
+                              log.preceptorSignoff.preceptorName,
+                              log.preceptorSignoff.preceptorInitials,
+                              log.preceptorSignoff.preceptorWard
+                            );
+                            return (
+                              <div>
+                                <span>{log.preceptorSignoff.preceptorName}</span>
+                                {log.preceptorSignoff.preceptorInitials && (
+                                  <span className="block font-mono text-[9px] text-gray-600">
+                                    ({log.preceptorSignoff.preceptorInitials})
+                                  </span>
+                                )}
+                                {evaluatorWard && (
+                                  <span className="block text-[9px] font-normal text-gray-700">
+                                    Ward: {evaluatorWard}
+                                  </span>
+                                )}
+                              </div>
+                            );
+                          })() : (
                             log?.preceptorSignoff?.preceptorInitials || ''
                           )}
                         </td>
@@ -312,12 +325,24 @@ export function NcepAcademicPrintView({
               </div>
 
               <div className="grid grid-cols-3 gap-4 pt-2">
-                <p>
-                  <strong>• Preceptor / Mentor Name:</strong><br />
+                <div>
+                  <strong>• Preceptor / Mentor Name &amp; Ward:</strong><br />
                   <span className="border-b border-black pb-0.5 inline-block min-w-[160px]">
                     {log.preceptorSignoff?.preceptorName || ''}
                   </span>
-                </p>
+                  {log.preceptorSignoff?.preceptorName && (() => {
+                    const evaluatorWard = resolvePreceptorWard(
+                      log.preceptorSignoff.preceptorName,
+                      log.preceptorSignoff.preceptorInitials,
+                      log.preceptorSignoff.preceptorWard
+                    );
+                    return evaluatorWard ? (
+                      <span className="block text-[10px] text-gray-700 mt-0.5">
+                        Ward: {evaluatorWard}
+                      </span>
+                    ) : null;
+                  })()}
+                </div>
                 <div>
                   <strong>• Signature:</strong><br />
                   {log.preceptorSignoff?.signatureDataUrl ? (

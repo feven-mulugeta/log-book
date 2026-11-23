@@ -12,10 +12,13 @@ import {
   Key,
   Layers,
   Sparkles,
+  Database,
+  AlertCircle,
 } from 'lucide-react';
 import {
   downloadStudentManual,
   downloadMentorManual,
+  downloadCloudSaveVerificationGuide,
 } from '../utils/wordManualGenerator';
 
 interface UserManualModalProps {
@@ -24,19 +27,22 @@ interface UserManualModalProps {
 }
 
 export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
-  const [activeManualTab, setActiveManualTab] = useState<'student' | 'mentor'>('student');
+  const [activeManualTab, setActiveManualTab] = useState<'student' | 'mentor' | 'cloud_save'>('cloud_save');
   const [isDownloadingStudent, setIsDownloadingStudent] = useState(false);
   const [isDownloadingMentor, setIsDownloadingMentor] = useState(false);
+  const [isDownloadingCloudGuide, setIsDownloadingCloudGuide] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   if (!isOpen) return null;
 
   const handleDownloadStudent = async () => {
     try {
+      setDownloadError(null);
       setIsDownloadingStudent(true);
       await downloadStudentManual();
     } catch (e) {
       console.error(e);
-      alert('Error generating Student Word Document. Please check browser permissions.');
+      setDownloadError('Error generating Student Word Document. Please check browser download permissions.');
     } finally {
       setIsDownloadingStudent(false);
     }
@@ -44,13 +50,27 @@ export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
 
   const handleDownloadMentor = async () => {
     try {
+      setDownloadError(null);
       setIsDownloadingMentor(true);
       await downloadMentorManual();
     } catch (e) {
       console.error(e);
-      alert('Error generating Mentor Word Document. Please check browser permissions.');
+      setDownloadError('Error generating Mentor Word Document. Please check browser download permissions.');
     } finally {
       setIsDownloadingMentor(false);
+    }
+  };
+
+  const handleDownloadCloudGuide = async () => {
+    try {
+      setDownloadError(null);
+      setIsDownloadingCloudGuide(true);
+      await downloadCloudSaveVerificationGuide();
+    } catch (e) {
+      console.error(e);
+      setDownloadError('Error generating Cloud Save Verification Guide (.docx). Please check browser download permissions.');
+    } finally {
+      setIsDownloadingCloudGuide(false);
     }
   };
 
@@ -84,23 +104,59 @@ export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
         </div>
 
         {/* Word Document Download Action Cards */}
-        <div className="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 shrink-0">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-            {/* Student Word Doc Card */}
-            <div className="p-4 bg-white rounded-xl border border-teal-200 shadow-2xs flex flex-col justify-between space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-teal-50 rounded-xl text-teal-800 shrink-0">
-                  <GraduationCap className="w-5 h-5" />
+        <div className="p-4 sm:p-5 bg-slate-50 border-b border-slate-200 shrink-0 space-y-3">
+          {downloadError && (
+            <div className="p-2.5 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-800 flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{downloadError}</span>
+            </div>
+          )}
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            {/* Cloud Save Verification Guide Card */}
+            <div className="p-3.5 bg-white rounded-xl border border-emerald-300 shadow-2xs flex flex-col justify-between space-y-2.5">
+              <div className="flex items-start gap-2.5">
+                <div className="p-2 bg-emerald-50 rounded-xl text-emerald-700 shrink-0">
+                  <Database className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <h3 className="text-xs font-bold text-slate-900">Cloud Save Verification Guide</h3>
+                    <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 bg-emerald-100 text-emerald-900 rounded">
+                      .DOCX
+                    </span>
+                  </div>
+                  <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                    Step-by-step Word guide for <strong>Students &amp; Instructors</strong> to guarantee data &amp; signatures are permanently saved to Cloud DB.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={handleDownloadCloudGuide}
+                disabled={isDownloadingCloudGuide}
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-emerald-700 hover:bg-emerald-800 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>{isDownloadingCloudGuide ? 'Generating Word...' : 'Download Save Guide (.docx)'}</span>
+              </button>
+            </div>
+
+            {/* Student Word Doc Card */}
+            <div className="p-3.5 bg-white rounded-xl border border-teal-200 shadow-2xs flex flex-col justify-between space-y-2.5">
+              <div className="flex items-start gap-2.5">
+                <div className="p-2 bg-teal-50 rounded-xl text-teal-800 shrink-0">
+                  <GraduationCap className="w-4 h-4" />
+                </div>
+                <div>
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <h3 className="text-xs font-bold text-slate-900">Student &amp; Trainee Manual</h3>
                     <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 bg-teal-100 text-teal-900 rounded">
                       .DOCX
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                    Complete student operational guide with detailed breakdown of every application part, cursor use, activity logging, reflective notes, and weekly backups.
+                    Complete student operational guide covering activity logging, evidence upload, Cloud DB verification, and backups.
                   </p>
                 </div>
               </div>
@@ -108,28 +164,28 @@ export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
                 type="button"
                 onClick={handleDownloadStudent}
                 disabled={isDownloadingStudent}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-white bg-teal-700 hover:bg-teal-800 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
               >
-                <Download className="w-4 h-4" />
-                <span>{isDownloadingStudent ? 'Generating Word File...' : 'Download Student Manual (Word .docx)'}</span>
+                <Download className="w-3.5 h-3.5" />
+                <span>{isDownloadingStudent ? 'Generating Word...' : 'Download Student (.docx)'}</span>
               </button>
             </div>
 
             {/* Mentor & Preceptor Word Doc Card */}
-            <div className="p-4 bg-white rounded-xl border border-amber-200 shadow-2xs flex flex-col justify-between space-y-3">
-              <div className="flex items-start gap-3">
-                <div className="p-2.5 bg-amber-50 rounded-xl text-amber-800 shrink-0">
-                  <ShieldCheck className="w-5 h-5" />
+            <div className="p-3.5 bg-white rounded-xl border border-amber-200 shadow-2xs flex flex-col justify-between space-y-2.5">
+              <div className="flex items-start gap-2.5">
+                <div className="p-2 bg-amber-50 rounded-xl text-amber-800 shrink-0">
+                  <ShieldCheck className="w-4 h-4" />
                 </div>
                 <div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <h3 className="text-xs font-bold text-slate-900">Preceptor &amp; Mentor Manual</h3>
                     <span className="text-[10px] font-bold font-mono px-1.5 py-0.2 bg-amber-100 text-amber-950 rounded">
                       .DOCX
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                    Supervisory guide for clinical mentors: 15-preceptor directory administration, individual PIN authentication, formative evaluations, and final certification.
+                    Supervisory guide for mentors: PIN authentication, formative evaluations, cohort oversight, and final certification.
                   </p>
                 </div>
               </div>
@@ -137,51 +193,147 @@ export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
                 type="button"
                 onClick={handleDownloadMentor}
                 disabled={isDownloadingMentor}
-                className="w-full inline-flex items-center justify-center gap-2 px-4 py-2 text-xs font-bold text-amber-950 bg-amber-400 hover:bg-amber-300 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
+                className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-bold text-amber-950 bg-amber-400 hover:bg-amber-300 rounded-xl shadow-2xs transition-all disabled:opacity-50 cursor-pointer"
               >
-                <Download className="w-4 h-4" />
-                <span>{isDownloadingMentor ? 'Generating Word File...' : 'Download Preceptor Manual (Word .docx)'}</span>
+                <Download className="w-3.5 h-3.5" />
+                <span>{isDownloadingMentor ? 'Generating Word...' : 'Download Mentor (.docx)'}</span>
               </button>
             </div>
           </div>
         </div>
 
         {/* Tab Toggle for Reading In-App */}
-        <div className="px-5 pt-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
+        <div className="px-5 pt-3 bg-white border-b border-slate-200 flex items-center justify-between shrink-0 overflow-x-auto">
           <div className="flex items-center gap-2">
             <button
               type="button"
+              onClick={() => setActiveManualTab('cloud_save')}
+              className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
+                activeManualTab === 'cloud_save'
+                  ? 'border-emerald-700 text-emerald-900'
+                  : 'border-transparent text-slate-500 hover:text-slate-900'
+              }`}
+            >
+              <Database className="w-4 h-4" />
+              <span>Cloud Save Step-by-Step Guide</span>
+            </button>
+            <button
+              type="button"
               onClick={() => setActiveManualTab('student')}
-              className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+              className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
                 activeManualTab === 'student'
                   ? 'border-teal-700 text-teal-900'
                   : 'border-transparent text-slate-500 hover:text-slate-900'
               }`}
             >
               <GraduationCap className="w-4 h-4" />
-              <span>Read Student Manual In-App</span>
+              <span>Read Student Manual</span>
             </button>
             <button
               type="button"
               onClick={() => setActiveManualTab('mentor')}
-              className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-2 border-b-2 transition-colors cursor-pointer ${
+              className={`pb-2.5 px-3 text-xs font-bold flex items-center gap-1.5 border-b-2 whitespace-nowrap transition-colors cursor-pointer ${
                 activeManualTab === 'mentor'
                   ? 'border-amber-600 text-amber-950'
                   : 'border-transparent text-slate-500 hover:text-slate-900'
               }`}
             >
               <ShieldCheck className="w-4 h-4" />
-              <span>Read Preceptor Manual In-App</span>
+              <span>Read Preceptor Manual</span>
             </button>
           </div>
-          <span className="text-[11px] text-slate-400 hidden sm:inline">
+          <span className="text-[11px] text-slate-400 hidden lg:inline">
             Nursing Competency Enhancement Program (NCEP) Official Docs
           </span>
         </div>
 
         {/* Manual Reader Content Area */}
         <div className="p-5 sm:p-6 overflow-y-auto space-y-6 text-xs text-slate-700 leading-relaxed bg-white">
-          {activeManualTab === 'student' ? (
+          {activeManualTab === 'cloud_save' ? (
+            <div className="space-y-6 max-w-3xl mx-auto">
+              <div className="p-4 bg-emerald-50/80 border border-emerald-200 rounded-xl space-y-1">
+                <span className="text-[10px] font-bold uppercase text-emerald-800 tracking-wider">
+                  NCEP Core Competency 1 • Data Assurance Protocol
+                </span>
+                <h3 className="text-base font-bold text-emerald-950">
+                  Step-by-Step Guide: Ensuring Data Is Permanently Saved on Cloud DB
+                </h3>
+                <p className="text-[11px] text-emerald-900">
+                  Follow these exact steps for both Students and Instructors so you always know whether an entry is permanently saved on the Cloud Database or blocked by a connection/sign-in issue.
+                </p>
+              </div>
+
+              {/* For Students */}
+              <div className="space-y-2.5">
+                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 border-b pb-1">
+                  <GraduationCap className="w-4 h-4 text-teal-700" />
+                  <span>Part A: For Students (Trainees)</span>
+                </h4>
+                <ol className="list-decimal list-inside space-y-2 text-[11px] text-slate-700">
+                  <li>
+                    <strong>Sign In to Cloud DB First:</strong> Click <strong>&ldquo;Sign in for Cloud DB&rdquo;</strong> in the top header with your Google account and verify that your email and a green <strong>&ldquo;Cloud DB&rdquo;</strong> badge appear.
+                  </li>
+                  <li>
+                    <strong>Complete Tab 1 (Trainee Name &amp; ID):</strong> Enter your exact Full Name and Trainee ID (e.g. <code>NCEP-080-26</code>) in Tab 1 so the Cloud Database has an official student ID for your logs.
+                  </li>
+                  <li>
+                    <strong>Fill Log Sheet &amp; Attach Evidence:</strong> Fill your clinical log in Part II (or OCR import) and attach evidence. Heavy photos are automatically compressed so they save reliably, and attachments stay visible unless you delete them.
+                  </li>
+                  <li>
+                    <strong>Wait for the Save Confirmation Pop-Up:</strong> Never close the app right after clicking Save. Only the <strong>GREEN Pop-Up (&ldquo;Permanently Saved on Cloud Database&rdquo;)</strong> guarantees your work is committed to Cloud DB.
+                  </li>
+                  <li>
+                    <strong>If Amber / Indigo / Rose Pop-Up Appears:</strong> Your data is <strong>NOT saved</strong> on Cloud DB yet. Click <strong>&ldquo;Retry Cloud Save&rdquo;</strong> once internet returns (Amber), click <strong>&ldquo;Sign in with Google &amp; Save&rdquo;</strong> (Indigo), or fix the message shown (Rose).
+                  </li>
+                </ol>
+              </div>
+
+              {/* For Instructors */}
+              <div className="space-y-2.5">
+                <h4 className="text-sm font-bold text-slate-900 flex items-center gap-1.5 border-b pb-1">
+                  <ShieldCheck className="w-4 h-4 text-amber-700" />
+                  <span>Part B: For Instructors, Preceptors &amp; Mentors</span>
+                </h4>
+                <ol className="list-decimal list-inside space-y-2 text-[11px] text-slate-700">
+                  <li>
+                    <strong>Sign In &amp; Verify Your PIN:</strong> Sign in via <strong>&ldquo;Sign in for Cloud DB&rdquo;</strong> in the header, then unlock Preceptor or Lead Educator mode with your 4-digit PIN (or enter your PIN when signing a session). This registers your staff permission in Cloud DB.
+                  </li>
+                  <li>
+                    <strong>Review Student Logs &amp; Evidence Vault:</strong> Open the student&rsquo;s dossier and verify their activity notes and uploaded evidence.
+                  </li>
+                  <li>
+                    <strong>Sign Competency (Part I, Part II, or Part III):</strong> Stamp <em>Met</em> in Part I Matrix, complete Section 3 evaluation + digital signature in Part II, or certify Part III.
+                  </li>
+                  <li>
+                    <strong>Confirm the GREEN Save Pop-Up:</strong> Wait until the pop-up turns <strong>GREEN (&ldquo;Permanently Saved on Cloud Database&rdquo;)</strong> showing the Trainee Name, your Preceptor Name, and timestamp.
+                  </li>
+                  <li>
+                    <strong>Verify Final Matrix &amp; Header Status:</strong> Confirm the session flipped to <strong>Met</strong> with your initials/date, the cohort completion count updated, and the top badge still says <strong>&ldquo;Cloud DB&rdquo;</strong>.
+                  </li>
+                </ol>
+              </div>
+
+              {/* Pop-up Color Quick Key */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 text-[11px]">
+                <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <strong className="text-emerald-900 block">🟢 GREEN — Permanently Saved</strong>
+                  <span className="text-emerald-800">100% confirmed on Cloud Database &amp; Live Server. Safe to proceed.</span>
+                </div>
+                <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl">
+                  <strong className="text-amber-950 block">🟠 AMBER — Connection Problem</strong>
+                  <span className="text-amber-900">NOT saved on Cloud DB (local only). Fix Wi-Fi/data &amp; click Retry Cloud Save.</span>
+                </div>
+                <div className="p-3 bg-indigo-50 border border-indigo-200 rounded-xl">
+                  <strong className="text-indigo-950 block">🔵 INDIGO — Google Sign-In Needed</strong>
+                  <span className="text-indigo-900">Device is online, but Google Sign-In is required to commit to Cloud DB.</span>
+                </div>
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl">
+                  <strong className="text-rose-950 block">🔴 ROSE — Other Error / Permission</strong>
+                  <span className="text-rose-900">Blank Name/ID in Tab 1, missing staff PIN permission, or quota limit.</span>
+                </div>
+              </div>
+            </div>
+          ) : activeManualTab === 'student' ? (
             <div className="space-y-6 max-w-3xl mx-auto">
               {/* Student Header */}
               <div className="p-4 bg-teal-50/70 border border-teal-200 rounded-xl space-y-1">
@@ -494,7 +646,15 @@ export function UserManualModal({ isOpen, onClose }: UserManualModalProps) {
             <CheckCircle2 className="w-4 h-4 text-emerald-600" />
             <span>Nursing Competency Enhancement Program (NCEP) • Ministry of Health &amp; AAU Standards</span>
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            <button
+              type="button"
+              onClick={handleDownloadCloudGuide}
+              className="px-3 py-1.5 text-xs font-semibold text-white bg-emerald-700 hover:bg-emerald-800 rounded-lg transition-colors flex items-center gap-1 cursor-pointer"
+            >
+              <Download className="w-3.5 h-3.5" />
+              <span>Save Guide (.docx)</span>
+            </button>
             <button
               type="button"
               onClick={handleDownloadStudent}

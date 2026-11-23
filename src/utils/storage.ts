@@ -260,6 +260,63 @@ export function saveStoredPreceptors(preceptors: RegisteredPreceptor[]): void {
   safeLocalStorageSet(STORAGE_KEYS.PRECEPTOR_ROSTER, JSON.stringify(preceptors));
 }
 
+export const CLINICAL_WARD_PRESETS: string[] = [
+  'Medical',
+  'Medical ICU',
+  'Surgical',
+  'Medical-Surgical',
+  'NICU',
+  'Emergency Center',
+  'Pediatrics',
+  'ICU',
+  'Obstetrics & Gynecology',
+  'Operating Theater',
+  'Outpatient Department',
+  'Clinical Education & Training Directorate',
+];
+
+export function resolvePreceptorWard(
+  preceptorName?: string,
+  preceptorInitials?: string,
+  explicitWard?: string,
+  preceptorsList?: RegisteredPreceptor[]
+): string {
+  if (explicitWard && explicitWard.trim()) {
+    return explicitWard.trim();
+  }
+  const roster = preceptorsList || getStoredPreceptors();
+  const cleanName = (preceptorName || '').trim().toLowerCase();
+  const cleanInitials = (preceptorInitials || '').trim().toLowerCase();
+
+  if (cleanName) {
+    const exactMatch = roster.find(
+      (p) => (p.name || '').trim().toLowerCase() === cleanName
+    );
+    if (exactMatch?.wardDepartment?.trim()) {
+      return exactMatch.wardDepartment.trim();
+    }
+    const partialMatch = roster.find(
+      (p) =>
+        cleanName.includes((p.name || '').trim().toLowerCase()) ||
+        (p.name || '').trim().toLowerCase().includes(cleanName)
+    );
+    if (partialMatch?.wardDepartment?.trim()) {
+      return partialMatch.wardDepartment.trim();
+    }
+  }
+
+  if (cleanInitials) {
+    const initialsMatch = roster.find(
+      (p) => (p.initials || '').trim().toLowerCase() === cleanInitials
+    );
+    if (initialsMatch?.wardDepartment?.trim()) {
+      return initialsMatch.wardDepartment.trim();
+    }
+  }
+
+  return '';
+}
+
 export function findPreceptorByPin(pin: string): RegisteredPreceptor | null {
   const trimmed = pin.trim();
   if (!trimmed) return null;

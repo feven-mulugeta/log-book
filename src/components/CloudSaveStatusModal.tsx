@@ -28,6 +28,7 @@ export interface CloudSavePopupState {
   studentName: string;
   studentId: string;
   evaluatorName?: string;
+  evaluatorWard?: string;
   savedAtIso?: string;
   liveServerSaved?: boolean;
   cloudDbSaved?: boolean;
@@ -159,6 +160,11 @@ export function CloudSaveStatusModal({
               {state.evaluatorName && (
                 <span>
                   Signed By: <strong className="text-teal-800">{state.evaluatorName}</strong>
+                  {state.evaluatorWard ? (
+                    <span className="ml-1 text-teal-700 font-semibold">
+                      ({state.evaluatorWard} Ward)
+                    </span>
+                  ) : null}
                 </span>
               )}
             </div>

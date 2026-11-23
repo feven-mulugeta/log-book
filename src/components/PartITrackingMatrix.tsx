@@ -16,7 +16,7 @@ import {
 import { DetailedActivityLogSheet, NCEPSessionDefinition, SubCompetencyId, RegisteredPreceptor } from '../types/nursing';
 import { NCEP_SESSIONS_DEFINITIONS } from '../data/ncepData';
 import { PreceptorPinModal } from './PreceptorPinModal';
-import { UserRole } from '../utils/storage';
+import { UserRole, resolvePreceptorWard } from '../utils/storage';
 
 interface PartITrackingMatrixProps {
   detailedLogs: DetailedActivityLogSheet[];
@@ -29,6 +29,7 @@ interface PartITrackingMatrixProps {
     enteredPin?: string
   ) => void;
   userRole?: UserRole;
+  authenticatedPreceptor?: RegisteredPreceptor | null;
 }
 
 export function PartITrackingMatrix({
@@ -37,6 +38,7 @@ export function PartITrackingMatrix({
   onCreateNewDetailedLogForSession,
   onQuickPreceptorSign,
   userRole = 'trainee',
+  authenticatedPreceptor = null,
 }: PartITrackingMatrixProps) {
   const [pinModalOpen, setPinModalOpen] = useState(false);
   const [sessionToSign, setSessionToSign] = useState<number | null>(null);
@@ -97,7 +99,7 @@ export function PartITrackingMatrix({
         setSessionToSign(sessionNumber);
         setPinModalOpen(true);
       } else {
-        onQuickPreceptorSign(sessionNumber, 'Pending');
+        onQuickPreceptorSign(sessionNumber, 'Pending', authenticatedPreceptor || undefined);
       }
     } else {
       // Sign as Met: requires preceptor authorization PIN if in trainee mode
@@ -105,7 +107,7 @@ export function PartITrackingMatrix({
         setSessionToSign(sessionNumber);
         setPinModalOpen(true);
       } else {
-        onQuickPreceptorSign(sessionNumber, 'Met');
+        onQuickPreceptorSign(sessionNumber, 'Met', authenticatedPreceptor || undefined);
       }
     }
   };
@@ -303,33 +305,45 @@ export function PartITrackingMatrix({
 
                         {/* Preceptor / Mentor Signed & Ward */}
                         <td className="py-3 px-3 align-top text-center font-sans">
-                          {log?.preceptorSignoff?.isSigned ? (
-                            <div className="flex flex-col items-center gap-1">
-                              <span
-                                className="font-bold text-teal-950 bg-teal-50/90 px-2 py-0.5 rounded-lg border border-teal-200 text-[11px] shadow-2xs leading-tight block text-center max-w-[150px]"
-                                title={`Full Evaluator Name: ${log.preceptorSignoff.preceptorName || 'Clinical Preceptor'}`}
-                              >
-                                {log.preceptorSignoff.preceptorName || 'Clinical Preceptor'}
-                              </span>
-                              <div className="flex items-center justify-center gap-1 text-[10px] text-slate-500 font-sans">
-                                {log.preceptorSignoff.preceptorInitials && (
-                                  <span className="font-mono font-bold text-teal-700 bg-teal-100/60 px-1 py-0.2 rounded text-[9px]">
-                                    {log.preceptorSignoff.preceptorInitials}
-                                  </span>
-                                )}
-                                {log.clinicalSettingWard && (
-                                  <span className="truncate max-w-[100px]" title={log.clinicalSettingWard}>
-                                    {log.clinicalSettingWard.split('/')[0].trim()}
+                          {log?.preceptorSignoff?.isSigned ? (() => {
+                            const evaluatorWard =
+                              resolvePreceptorWard(
+                                log.preceptorSignoff.preceptorName,
+                                log.preceptorSignoff.preceptorInitials,
+                                log.preceptorSignoff.preceptorWard
+                              ) || log.clinicalSettingWard?.split('/')[0].trim() || '';
+                            return (
+                              <div className="flex flex-col items-center gap-1">
+                                <span
+                                  className="font-bold text-teal-950 bg-teal-50/90 px-2 py-0.5 rounded-lg border border-teal-200 text-[11px] shadow-2xs leading-tight block text-center max-w-[160px]"
+                                  title={`Evaluator: ${log.preceptorSignoff.preceptorName || 'Clinical Preceptor'}${evaluatorWard ? ` · Ward: ${evaluatorWard}` : ''}`}
+                                >
+                                  {log.preceptorSignoff.preceptorName || 'Clinical Preceptor'}
+                                </span>
+                                <div className="flex flex-wrap items-center justify-center gap-1 text-[10px] text-slate-600 font-sans">
+                                  {log.preceptorSignoff.preceptorInitials && (
+                                    <span className="font-mono font-bold text-teal-700 bg-teal-100/60 px-1 py-0.2 rounded text-[9px]">
+                                      {log.preceptorSignoff.preceptorInitials}
+                                    </span>
+                                  )}
+                                  {evaluatorWard && (
+                                    <span
+                                      className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-slate-100 border border-slate-200 text-slate-700 font-semibold text-[9px] max-w-[125px] truncate"
+                                      title={`Permanent Ward: ${evaluatorWard}`}
+                                    >
+                                      <MapPin className="w-2.5 h-2.5 text-teal-700 shrink-0" />
+                                      <span className="truncate">{evaluatorWard}</span>
+                                    </span>
+                                  )}
+                                </div>
+                                {log.preceptorSignoff.dateSigned && (
+                                  <span className="text-[9px] text-slate-400 font-mono block">
+                                    Signed: {log.preceptorSignoff.dateSigned}
                                   </span>
                                 )}
                               </div>
-                              {log.preceptorSignoff.dateSigned && (
-                                <span className="text-[9px] text-slate-400 font-mono block">
-                                  Signed: {log.preceptorSignoff.dateSigned}
-                                </span>
-                              )}
-                            </div>
-                          ) : (
+                            );
+                          })() : (
                             <div className="text-center">
                               <span className="text-slate-300 text-xs block">—</span>
                               <span className="text-[9px] text-slate-400 italic">Pending Mentor</span>

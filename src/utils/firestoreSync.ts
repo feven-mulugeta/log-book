@@ -172,6 +172,7 @@ function serializePreceptorSignoff(sig?: Partial<PreceptorSignoff>) {
   return {
     isSigned: Boolean(sig?.isSigned),
     preceptorName: boundStr(sig?.preceptorName, 120, ''),
+    preceptorWard: boundStr(sig?.preceptorWard, 120, ''),
     signatureDataUrl: boundStr(sig?.signatureDataUrl, 200000, ''),
     dateSigned: boundStr(sig?.dateSigned, 32, ''),
     preceptorInitials: boundStr(sig?.preceptorInitials, 16, ''),
@@ -355,7 +356,7 @@ export async function seedInitialInstitutionalDataIfAdmin(
 ): Promise<void> {
   if (!isUserRootAdmin(user)) return;
 
-  // 1. Seed missing preceptor PIN secrets
+  // 1. Seed missing preceptor PIN secrets & secret-free permanent ward directory
   for (const p of preceptors) {
     const safeId = toFirestoreSafeId(p.id, 'preceptor');
     const path = `staffSecrets/${safeId}`;
@@ -378,6 +379,27 @@ export async function seedInitialInstitutionalDataIfAdmin(
       }
     } catch (error) {
       handleFirestoreFailure(error, OperationType.WRITE, path);
+    }
+
+    const pubPath = `preceptors/${safeId}`;
+    try {
+      const pubRef = doc(db, 'preceptors', safeId);
+      const pubSnap = await withFirestoreRetry(() => getDoc(pubRef));
+      if (!pubSnap.exists()) {
+        await withFirestoreRetry(() =>
+          setDoc(pubRef, {
+            id: safeId,
+            name: boundStr(p.name, 120),
+            role: p.role || 'preceptor',
+            title: boundStr(p.title, 120),
+            wardDepartment: boundStr(p.wardDepartment, 120),
+            initials: boundStr(p.initials, 10),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      }
+    } catch (error) {
+      handleFirestoreFailure(error, OperationType.WRITE, pubPath);
     }
   }
 
@@ -1103,3 +1125,131 @@ export function subscribeActiveStudentFirestore(
     unsubDoc();
   };
 }
+
+export async function savePreceptorsRosterToFirestore(
+  user: User,
+  preceptors: RegisteredPreceptor[],
+  deletedIds: string[] = []
+): Promise<void> {
+  if (!user?.uid || !user.emailVerified) return;
+
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    throw new FirestoreOfflineError(
+      'No active internet connection detected. Preceptor & mentor wards were not saved to Cloud DB.'
+    );
+  }
+
+  const isAdmin = isUserRootAdmin(user);
+
+  for (const p of preceptors) {
+    if (!p || !p.name) continue;
+    const safeId = toFirestoreSafeId(p.id, `prec-${toFirestoreSafeId(p.name)}`);
+    const validRole: RegisteredPreceptor['role'] =
+      p.role === 'mentor' || p.role === 'lead_educator' ? p.role : 'preceptor';
+
+    const dirPath = `preceptors/${safeId}`;
+    try {
+      await withFirestoreRetry(() =>
+        setDoc(doc(db, 'preceptors', safeId), {
+          id: safeId,
+          name: boundStr(p.name, 120),
+          role: validRole,
+          title: boundStr(p.title, 120),
+          wardDepartment: boundStr(p.wardDepartment, 120),
+          initials: boundStr(p.initials, 10),
+          updatedAt: serverTimestamp(),
+        })
+      );
+    } catch (err) {
+      handleFirestoreFailure(err, OperationType.WRITE, dirPath);
+    }
+
+    if (isAdmin) {
+      const secretPath = `staffSecrets/${safeId}`;
+      try {
+        await withFirestoreRetry(() =>
+          setDoc(doc(db, 'staffSecrets', safeId), {
+            preceptorId: safeId,
+            name: boundStr(p.name, 120),
+            role: validRole,
+            title: boundStr(p.title, 120),
+            wardDepartment: boundStr(p.wardDepartment, 120),
+            initials: boundStr(p.initials, 10),
+            pin: boundStr(p.pin, 10, '0000'),
+            updatedAt: serverTimestamp(),
+          })
+        );
+      } catch (err) {
+        handleFirestoreFailure(err, OperationType.WRITE, secretPath);
+      }
+    }
+  }
+
+  if (isAdmin && deletedIds.length > 0) {
+    for (const delId of deletedIds) {
+      const safeDelId = toFirestoreSafeId(delId);
+      if (!safeDelId) continue;
+      await withFirestoreRetry(() => deleteDoc(doc(db, 'preceptors', safeDelId))).catch(() => {});
+      await withFirestoreRetry(() => deleteDoc(doc(db, 'staffSecrets', safeDelId))).catch(() => {});
+    }
+  }
+
+  await verifyFirestoreWritesCommitted();
+}
+
+export async function loadPreceptorsFromFirestore(
+  user: User,
+  existingLocal: RegisteredPreceptor[]
+): Promise<RegisteredPreceptor[]> {
+  if (!user?.uid || !user.emailVerified) return existingLocal;
+
+  try {
+    const q = query(
+      collection(db, 'preceptors'),
+      where('role', 'in', ['preceptor', 'mentor', 'lead_educator'])
+    );
+    const snap = await withFirestoreRetry(() => getDocs(q));
+    if (snap.empty) return existingLocal;
+
+    const remoteEntries: Array<Record<string, any> & { id: string }> = snap.docs.map((d) => ({
+      ...(d.data() as Record<string, any>),
+      id: d.id,
+    }));
+    const merged: RegisteredPreceptor[] = [...existingLocal];
+
+    for (const r of remoteEntries) {
+      const rNameLower = String(r.name || '').trim().toLowerCase();
+      const idx = merged.findIndex(
+        (l) =>
+          toFirestoreSafeId(l.id) === r.id ||
+          (rNameLower && (l.name || '').trim().toLowerCase() === rNameLower)
+      );
+      if (idx >= 0) {
+        merged[idx] = {
+          ...merged[idx],
+          name: r.name || merged[idx].name,
+          role: (r.role as RegisteredPreceptor['role']) || merged[idx].role,
+          title: r.title || merged[idx].title,
+          wardDepartment: r.wardDepartment || merged[idx].wardDepartment,
+          initials: r.initials || merged[idx].initials,
+        };
+      } else {
+        merged.push({
+          id: r.id,
+          name: r.name || 'Clinical Preceptor',
+          role: (r.role as RegisteredPreceptor['role']) || 'preceptor',
+          title: r.title || 'Clinical Preceptor',
+          wardDepartment: r.wardDepartment || '',
+          initials: r.initials || 'CP',
+          pin: '2026',
+        });
+      }
+    }
+
+    return merged;
+  } catch (err) {
+    console.warn('[FirestoreSync] Load preceptors directory note:', err);
+    return existingLocal;
+  }
+}
+

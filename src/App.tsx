@@ -59,6 +59,7 @@ import {
   normalizeDetailedLog,
   normalizeFinalSignoff,
   mergeDetailedLogArrays,
+  resolvePreceptorWard,
   UserRole,
 } from './utils/storage';
 import { NCEP_SESSIONS_DEFINITIONS } from './data/ncepData';
@@ -93,6 +94,8 @@ import {
   removeAttachmentFromFirestore,
   registerStaffMemberInFirestore,
   deleteStudentFromFirestoreIfAdmin,
+  savePreceptorsRosterToFirestore,
+  loadPreceptorsFromFirestore,
   toFirestoreSafeId,
   FirestoreOfflineError,
   reconnectFirestoreNetwork,
@@ -181,8 +184,14 @@ export default function App() {
     roleSource: 'trainee' | 'preceptor';
     roleLabel: CloudSavePopupState['roleLabel'];
     evaluatorName?: string;
+    evaluatorWard?: string;
     isStaffAction?: boolean;
     inlineStaff?: { preceptor: RegisteredPreceptor; enteredPin: string } | null;
+  } | null>(null);
+  const pendingPreceptorsRetryRef = useRef<{
+    updatedPreceptors: RegisteredPreceptor[];
+    actionTitle: string;
+    deletedIds?: string[];
   } | null>(null);
   const retryPopupAfterGoogleAuthRef = useRef<boolean>(false);
 
@@ -609,6 +618,7 @@ export default function App() {
     roleSource: 'trainee' | 'preceptor';
     roleLabel: CloudSavePopupState['roleLabel'];
     evaluatorName?: string;
+    evaluatorWard?: string;
     isStaffAction?: boolean;
     inlineStaff?: { preceptor: RegisteredPreceptor; enteredPin: string } | null;
   }) => {
@@ -618,6 +628,7 @@ export default function App() {
       roleSource,
       roleLabel,
       evaluatorName,
+      evaluatorWard,
       isStaffAction,
       inlineStaff,
     } = params;
@@ -640,6 +651,7 @@ export default function App() {
         studentName: studentName || 'Unnamed Trainee',
         studentId: studentId || 'Missing ID',
         evaluatorName,
+        evaluatorWard,
         canRetry: false,
         detailMessage:
           'Trainee Name & ID are missing. Open Tab 1 (Trainee Info & Instructions), enter your Trainee Name and Trainee ID first, then save your log again so it can be stored under your official dossier in the Cloud Database.',
@@ -647,6 +659,7 @@ export default function App() {
       return;
     }
 
+    pendingPreceptorsRetryRef.current = null;
     pendingCloudRetryRef.current = params;
 
     // Show "Saving..." state while awaiting permanent confirmation
@@ -657,6 +670,7 @@ export default function App() {
       studentName,
       studentId,
       evaluatorName,
+      evaluatorWard,
     });
 
     // Fail fast if browser explicitly reports offline
@@ -671,6 +685,7 @@ export default function App() {
         studentName,
         studentId,
         evaluatorName,
+        evaluatorWard,
         liveServerSaved: false,
         cloudDbSaved: false,
         detailMessage: 'Your device currently has no internet connection (offline).',
@@ -700,6 +715,7 @@ export default function App() {
           studentName,
           studentId,
           evaluatorName,
+          evaluatorWard,
           liveServerSaved: false,
           cloudDbSaved: false,
           detailMessage:
@@ -716,6 +732,7 @@ export default function App() {
         studentName,
         studentId,
         evaluatorName,
+        evaluatorWard,
         liveServerSaved: liveSyncResult.ok,
         cloudDbSaved: false,
         detailMessage: liveSyncResult.ok
@@ -761,6 +778,7 @@ export default function App() {
         studentName,
         studentId,
         evaluatorName,
+        evaluatorWard,
         savedAtIso: new Date().toISOString(),
         liveServerSaved: liveSyncResult.ok,
         cloudDbSaved: true,
@@ -781,6 +799,7 @@ export default function App() {
           studentName,
           studentId,
           evaluatorName,
+          evaluatorWard,
           liveServerSaved: liveSyncResult.ok,
           cloudDbSaved: false,
           detailMessage: parsed.message,
@@ -793,7 +812,131 @@ export default function App() {
           studentName,
           studentId,
           evaluatorName,
+          evaluatorWard,
           liveServerSaved: liveSyncResult.ok,
+          cloudDbSaved: false,
+          canRetry: true,
+          detailMessage: parsed.message,
+        });
+      }
+    }
+  };
+
+  // Explicit verified save + pop-up confirmation for Permanent Preceptor & Mentor Ward Assignments
+  const handleSavePreceptorsToCloud = async (
+    updatedPreceptors: RegisteredPreceptor[],
+    actionTitle = 'Preceptor & Mentor Permanent Wards Saved',
+    deletedIds?: string[]
+  ) => {
+    saveStoredPreceptors(updatedPreceptors);
+
+    if (authenticatedPreceptor) {
+      const refreshedAuth = updatedPreceptors.find(
+        (p) =>
+          p.id === authenticatedPreceptor.id ||
+          (p.name || '').trim().toLowerCase() ===
+            (authenticatedPreceptor.name || '').trim().toLowerCase()
+      );
+      if (refreshedAuth) {
+        setAuthenticatedPreceptor(refreshedAuth);
+      }
+    }
+
+    pendingCloudRetryRef.current = null;
+    pendingPreceptorsRetryRef.current = { updatedPreceptors, actionTitle, deletedIds };
+
+    const summaryLabel = `Faculty Directory (${updatedPreceptors.length} Staff)`;
+    const roleLabel: CloudSavePopupState['roleLabel'] = 'Lead Clinical Educator';
+
+    setCloudSavePopup({
+      status: 'saving',
+      actionTitle,
+      roleLabel,
+      studentName: summaryLabel,
+      studentId: 'Preceptors & Mentors',
+    });
+
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+      setIsFirestoreOffline(true);
+      setFirestoreSaveStatus('error');
+      setFirestoreErrorMsg('Device is offline. Preceptor wards saved locally only.');
+      setCloudSavePopup({
+        status: 'connection_error',
+        actionTitle,
+        roleLabel,
+        studentName: summaryLabel,
+        studentId: 'Preceptors & Mentors',
+        liveServerSaved: false,
+        cloudDbSaved: false,
+        detailMessage: 'Your device currently has no internet connection (offline).',
+      });
+      return;
+    }
+
+    await cloudSync.syncPreceptors(updatedPreceptors);
+
+    if (!firebaseUser || !firebaseUser.emailVerified) {
+      setCloudSavePopup({
+        status: 'auth_required',
+        actionTitle,
+        roleLabel,
+        studentName: summaryLabel,
+        studentId: 'Preceptors & Mentors',
+        liveServerSaved: true,
+        cloudDbSaved: false,
+      });
+      return;
+    }
+
+    setFirestoreSaveStatus('saving');
+    setFirestoreErrorMsg(null);
+    setIsFirestoreOffline(false);
+
+    try {
+      await savePreceptorsRosterToFirestore(firebaseUser, updatedPreceptors, deletedIds);
+      setFirestoreSaveStatus('saved');
+      setIsFirestoreOffline(false);
+      setFirestoreErrorMsg(null);
+
+      setCloudSavePopup({
+        status: 'saved',
+        actionTitle,
+        roleLabel,
+        studentName: summaryLabel,
+        studentId: 'Preceptors & Mentors',
+        evaluatorName: authenticatedPreceptor?.name || firebaseUser.displayName || 'Lead Educator',
+        evaluatorWard: authenticatedPreceptor?.wardDepartment || undefined,
+        savedAtIso: new Date().toISOString(),
+        liveServerSaved: true,
+        cloudDbSaved: true,
+      });
+    } catch (err: unknown) {
+      const parsed = parseCloudErrorForPopup(err);
+      const classified = classifyFirestoreError(err);
+
+      setFirestoreSaveStatus('error');
+      setIsFirestoreOffline(parsed.isConnection || classified.offline);
+      setFirestoreErrorMsg(classified.message);
+
+      if (parsed.isConnection || classified.offline) {
+        setCloudSavePopup({
+          status: 'connection_error',
+          actionTitle,
+          roleLabel,
+          studentName: summaryLabel,
+          studentId: 'Preceptors & Mentors',
+          liveServerSaved: true,
+          cloudDbSaved: false,
+          detailMessage: parsed.message,
+        });
+      } else {
+        setCloudSavePopup({
+          status: 'other_error',
+          actionTitle,
+          roleLabel,
+          studentName: summaryLabel,
+          studentId: 'Preceptors & Mentors',
+          liveServerSaved: true,
           cloudDbSaved: false,
           canRetry: true,
           detailMessage: parsed.message,
@@ -834,6 +977,26 @@ export default function App() {
             getStoredPreceptors()
           );
           if (cancelled) return;
+        }
+
+        // Hydrate permanent preceptor & mentor directory (including saved wards) from Cloud DB
+        const remotePreceptors = await loadPreceptorsFromFirestore(
+          firebaseUser,
+          getStoredPreceptors()
+        );
+        if (cancelled) return;
+        if (Array.isArray(remotePreceptors) && remotePreceptors.length > 0) {
+          saveStoredPreceptors(remotePreceptors);
+          window.dispatchEvent(new CustomEvent('ncep-preceptors-updated', { detail: remotePreceptors }));
+          setAuthenticatedPreceptor((prevAuth) => {
+            if (!prevAuth) return prevAuth;
+            const refreshed = remotePreceptors.find(
+              (p) =>
+                p.id === prevAuth.id ||
+                (p.name || '').trim().toLowerCase() === (prevAuth.name || '').trim().toLowerCase()
+            );
+            return refreshed || prevAuth;
+          });
         }
 
         const remoteStudents = isRootAdmin
@@ -938,14 +1101,22 @@ export default function App() {
         setFirestoreErrorMsg(null);
         setFirestoreSaveStatus('saved');
 
-        if (retryPopupAfterGoogleAuthRef.current && pendingCloudRetryRef.current && !cancelled) {
+        if (retryPopupAfterGoogleAuthRef.current && !cancelled) {
           retryPopupAfterGoogleAuthRef.current = false;
-          const pending = pendingCloudRetryRef.current;
-          // Re-run verified cloud save now that Google auth is initialized
-          saveAndConfirmStudentToCloud({
-            ...pending,
-            isStaffAction: pending.isStaffAction || isRootAdmin || staffVerified,
-          });
+          if (pendingPreceptorsRetryRef.current) {
+            const pPending = pendingPreceptorsRetryRef.current;
+            handleSavePreceptorsToCloud(
+              pPending.updatedPreceptors,
+              pPending.actionTitle,
+              pPending.deletedIds
+            );
+          } else if (pendingCloudRetryRef.current) {
+            const pending = pendingCloudRetryRef.current;
+            saveAndConfirmStudentToCloud({
+              ...pending,
+              isStaffAction: pending.isStaffAction || isRootAdmin || staffVerified,
+            });
+          }
         }
       } catch (err: any) {
         if (!cancelled) {
@@ -1479,9 +1650,14 @@ export default function App() {
           .join('')
           .slice(0, 3)
           .toUpperCase() || 'CP';
+    const effectiveWard = (
+      activePreceptor?.wardDepartment ||
+      resolvePreceptorWard(effectiveName, effectiveInitials) ||
+      ''
+    ).trim();
 
     const defaultComment = activePreceptor
-      ? `Competency demonstrated and validated by ${activePreceptor.name} (${activePreceptor.title} · ${activePreceptor.wardDepartment}).`
+      ? `Competency demonstrated and validated by ${activePreceptor.name} (${activePreceptor.title} · ${effectiveWard || activePreceptor.wardDepartment}).`
       : 'Competency evaluated and validated by preceptor.';
 
     const prevLogs = detailedLogsRef.current;
@@ -1501,6 +1677,7 @@ export default function App() {
                 isSigned: true,
                 preceptorName: effectiveName,
                 preceptorInitials: effectiveInitials,
+                ...(effectiveWard ? { preceptorWard: effectiveWard } : {}),
                 competencyDemonstrated: 'Satisfactory',
                 comments: current.preceptorSignoff?.comments || defaultComment,
                 dateSigned: today,
@@ -1519,7 +1696,7 @@ export default function App() {
         dateOfActivity: today,
         durationHours: 4,
         clinicalSettingWard:
-          activePreceptor?.wardDepartment || traineeInfo.clinicalDepartmentWard || 'Clinical Ward',
+          effectiveWard || traineeInfo.clinicalDepartmentWard || 'Clinical Ward',
         activityDescription: `Completed required clinical activity for Session ${sessionNumber}: ${sessionDef?.requiredActivity || ''}`,
         reflectiveNotesLessonsLearned: `Demonstrated clinical judgment, followed protocols and integrated patient-centered care.`,
         attachments: [],
@@ -1532,6 +1709,7 @@ export default function App() {
                 isSigned: true,
                 preceptorName: effectiveName,
                 preceptorInitials: effectiveInitials,
+                ...(effectiveWard ? { preceptorWard: effectiveWard } : {}),
                 competencyDemonstrated: 'Satisfactory',
                 comments: defaultComment,
                 dateSigned: today,
@@ -1572,6 +1750,7 @@ export default function App() {
       roleSource: 'preceptor',
       roleLabel: userRole === 'lead_educator' ? 'Lead Clinical Educator' : 'Clinical Preceptor / Mentor',
       evaluatorName: newStatus === 'Met' ? effectiveName : undefined,
+      evaluatorWard: newStatus === 'Met' && effectiveWard ? effectiveWard : undefined,
       isStaffAction: true,
       inlineStaff,
     });
@@ -1581,10 +1760,28 @@ export default function App() {
   const handleSaveLogSheet = (newLog: DetailedActivityLogSheet) => {
     const prevLogs = detailedLogsRef.current;
     const idx = prevLogs.findIndex((l) => l.id === newLog.id || l.sessionNumber === newLog.sessionNumber);
+    const resolvedSignoffWard = newLog.preceptorSignoff?.isSigned
+      ? resolvePreceptorWard(
+          newLog.preceptorSignoff.preceptorName,
+          newLog.preceptorSignoff.preceptorInitials,
+          newLog.preceptorSignoff.preceptorWard
+        )
+      : '';
+    const enrichedLog: DetailedActivityLogSheet =
+      newLog.preceptorSignoff?.isSigned && resolvedSignoffWard
+        ? {
+            ...newLog,
+            preceptorSignoff: {
+              ...newLog.preceptorSignoff,
+              preceptorWard: resolvedSignoffWard,
+            },
+          }
+        : newLog;
+
     const updatedLogs =
       idx >= 0
-        ? prevLogs.map((item, i) => (i === idx ? newLog : item))
-        : [newLog, ...prevLogs];
+        ? prevLogs.map((item, i) => (i === idx ? enrichedLog : item))
+        : [enrichedLog, ...prevLogs];
 
     const updatedRecord: CohortStudentRecord = normalizeStudentRecord({
       id: currentStudentRosterId,
@@ -1610,18 +1807,19 @@ export default function App() {
 
     const existingBeforeSave = idx >= 0 ? prevLogs[idx] : undefined;
     const isPreceptorSigningAction = Boolean(
-      newLog.preceptorSignoff?.isSigned &&
+      enrichedLog.preceptorSignoff?.isSigned &&
         (!existingBeforeSave?.preceptorSignoff?.isSigned ||
-          existingBeforeSave.preceptorSignoff.dateSigned !== newLog.preceptorSignoff.dateSigned ||
-          existingBeforeSave.preceptorSignoff.preceptorName !== newLog.preceptorSignoff.preceptorName ||
+          existingBeforeSave.preceptorSignoff.dateSigned !== enrichedLog.preceptorSignoff.dateSigned ||
+          existingBeforeSave.preceptorSignoff.preceptorName !== enrichedLog.preceptorSignoff.preceptorName ||
+          existingBeforeSave.preceptorSignoff.preceptorWard !== enrichedLog.preceptorSignoff.preceptorWard ||
           userRole !== 'trainee')
     );
 
     saveAndConfirmStudentToCloud({
       record: updatedRecord,
       actionTitle: isPreceptorSigningAction
-        ? `Preceptor Sign-Off Saved (Session ${newLog.sessionNumber} · ${newLog.status})`
-        : `Session ${newLog.sessionNumber} Clinical Activity Log Saved`,
+        ? `Preceptor Sign-Off Saved (Session ${enrichedLog.sessionNumber} · ${enrichedLog.status})`
+        : `Session ${enrichedLog.sessionNumber} Clinical Activity Log Saved`,
       roleSource: isPreceptorSigningAction || userRole !== 'trainee' ? 'preceptor' : 'trainee',
       roleLabel:
         userRole === 'lead_educator'
@@ -1629,7 +1827,8 @@ export default function App() {
           : isPreceptorSigningAction || userRole === 'preceptor'
             ? 'Clinical Preceptor / Mentor'
             : 'Student / Trainee',
-      evaluatorName: isPreceptorSigningAction ? newLog.preceptorSignoff?.preceptorName : undefined,
+      evaluatorName: isPreceptorSigningAction ? enrichedLog.preceptorSignoff?.preceptorName : undefined,
+      evaluatorWard: isPreceptorSigningAction && resolvedSignoffWard ? resolvedSignoffWard : undefined,
       isStaffAction: isPreceptorSigningAction || userRole !== 'trainee',
       inlineStaff: isPreceptorSigningAction ? inlineStaffCredentialRef.current : null,
     });
@@ -2510,6 +2709,7 @@ export default function App() {
               onCreateNewDetailedLogForSession={handleOpenDetailedLogForSession}
               onQuickPreceptorSign={handleQuickPreceptorSignFromMatrix}
               userRole={userRole}
+              authenticatedPreceptor={authenticatedPreceptor}
             />
           )}
 
@@ -2523,6 +2723,7 @@ export default function App() {
               activeSessionToOpen={targetSessionForPart2}
               onClearActiveSession={() => setTargetSessionForPart2(null)}
               userRole={userRole}
+              authenticatedPreceptor={authenticatedPreceptor}
               traineeName={traineeInfo?.traineeName}
               traineeId={traineeInfo?.traineeId}
             />
@@ -2549,6 +2750,7 @@ export default function App() {
               onImportStudentDossier={handleImportStudentDossier}
               onImportMultipleStudentDossiers={handleImportMultipleStudentDossiers}
               onUpdateStudent={handleUpdateCohortStudent}
+              onSavePreceptorsToCloud={handleSavePreceptorsToCloud}
               userRole={userRole}
               onRequireLeadEducatorAuth={() => {
                 setTargetRoleForAuth('lead_educator');
@@ -2657,12 +2859,21 @@ export default function App() {
         isSigningIn={isSigningIn}
         onClose={() => setCloudSavePopup(null)}
         onRetry={async () => {
+          const pendingPreceptors = pendingPreceptorsRetryRef.current;
           const pending = pendingCloudRetryRef.current;
-          if (!pending) return;
+          if (!pending && !pendingPreceptors) return;
           setIsRetryingCloudPopup(true);
           try {
             await reconnectFirestoreNetwork();
-            await saveAndConfirmStudentToCloud(pending);
+            if (pendingPreceptors) {
+              await handleSavePreceptorsToCloud(
+                pendingPreceptors.updatedPreceptors,
+                pendingPreceptors.actionTitle,
+                pendingPreceptors.deletedIds
+              );
+            } else if (pending) {
+              await saveAndConfirmStudentToCloud(pending);
+            }
           } finally {
             setIsRetryingCloudPopup(false);
           }

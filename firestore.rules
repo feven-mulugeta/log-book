@@ -45,6 +45,12 @@ service cloud.firestore {
       return isVerifiedUser() && exists(/databases/$(database)/documents/staffMembers/$(request.auth.uid));
     }
 
+    // Only call in get/create/update/delete (NEVER inside allow list)
+    function isLeadEducatorStaff() {
+      return isStaffMember()
+        && get(/databases/$(database)/documents/staffMembers/$(request.auth.uid)).data.role == 'lead_educator';
+    }
+
     // --- Validation Blueprints ---
     function isValidUserPublic(data) {
       return data.keys().hasAll(['uid', 'displayName', 'role', 'linkedStudentId', 'createdAt', 'updatedAt'])
@@ -83,6 +89,18 @@ service cloud.firestore {
         && data.wardDepartment is string && data.wardDepartment.size() <= 120
         && data.initials is string && data.initials.size() <= 10
         && data.pin is string && data.pin.size() >= 4 && data.pin.size() <= 10
+        && data.updatedAt is timestamp;
+    }
+
+    function isValidPreceptorDirectoryEntry(data) {
+      return data.keys().hasAll(['id', 'name', 'role', 'title', 'wardDepartment', 'initials', 'updatedAt'])
+        && data.keys().hasOnly(['id', 'name', 'role', 'title', 'wardDepartment', 'initials', 'updatedAt'])
+        && isValidId(data.id)
+        && data.name is string && data.name.size() >= 1 && data.name.size() <= 120
+        && data.role in ['preceptor', 'mentor', 'lead_educator']
+        && data.title is string && data.title.size() <= 120
+        && data.wardDepartment is string && data.wardDepartment.size() <= 120
+        && data.initials is string && data.initials.size() <= 10
         && data.updatedAt is timestamp;
     }
 
@@ -154,9 +172,10 @@ service cloud.firestore {
     function isValidPreceptorSignoff(sig) {
       return sig is map
         && sig.keys().hasAll(['isSigned', 'preceptorName', 'signatureDataUrl', 'dateSigned', 'preceptorInitials', 'competencyDemonstrated', 'comments'])
-        && sig.keys().hasOnly(['isSigned', 'preceptorName', 'signatureDataUrl', 'dateSigned', 'preceptorInitials', 'competencyDemonstrated', 'comments'])
+        && sig.keys().hasOnly(['isSigned', 'preceptorName', 'preceptorWard', 'signatureDataUrl', 'dateSigned', 'preceptorInitials', 'competencyDemonstrated', 'comments'])
         && sig.isSigned is bool
         && sig.preceptorName is string && sig.preceptorName.size() <= 120
+        && (!('preceptorWard' in sig) || (sig.preceptorWard is string && sig.preceptorWard.size() <= 120))
         && sig.signatureDataUrl is string && sig.signatureDataUrl.size() <= 200000
         && sig.dateSigned is string && sig.dateSigned.size() <= 32
         && sig.preceptorInitials is string && sig.preceptorInitials.size() <= 16
@@ -298,6 +317,29 @@ service cloud.firestore {
       allow list: if isVerifiedUser() && isRootAdmin();
       allow create: if isVerifiedUser() && isValidId(preceptorId) && isAdmin() && isValidStaffSecret(incoming()) && incoming().preceptorId == preceptorId && incoming().updatedAt == request.time;
       allow update: if isVerifiedUser() && isValidId(preceptorId) && isAdmin() && isValidStaffSecret(incoming()) && incoming().preceptorId == existing().preceptorId && incoming().updatedAt == request.time && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'title', 'wardDepartment', 'initials', 'pin', 'updatedAt']);
+      allow delete: if isVerifiedUser() && isValidId(preceptorId) && isAdmin();
+    }
+
+    // 3b. Secret-Free Preceptor & Mentor Permanent Ward Directory
+    match /preceptors/{preceptorId} {
+      allow get: if isVerifiedUser() && isValidId(preceptorId);
+      allow list: if isVerifiedUser() && resource.data.role in ['preceptor', 'mentor', 'lead_educator'];
+
+      allow create: if isVerifiedUser()
+        && isValidId(preceptorId)
+        && isValidPreceptorDirectoryEntry(incoming())
+        && incoming().id == preceptorId
+        && incoming().updatedAt == request.time
+        && (isAdmin() || isLeadEducatorStaff());
+
+      allow update: if isVerifiedUser()
+        && isValidId(preceptorId)
+        && isValidPreceptorDirectoryEntry(incoming())
+        && incoming().id == existing().id
+        && incoming().updatedAt == request.time
+        && (isAdmin() || isLeadEducatorStaff())
+        && incoming().diff(existing()).affectedKeys().hasOnly(['name', 'role', 'title', 'wardDepartment', 'initials', 'updatedAt']);
+
       allow delete: if isVerifiedUser() && isValidId(preceptorId) && isAdmin();
     }
 

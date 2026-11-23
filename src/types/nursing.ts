@@ -48,6 +48,7 @@ export interface EvidenceAttachment {
 export interface PreceptorSignoff {
   isSigned: boolean;
   preceptorName: string;
+  preceptorWard?: string;
   signatureDataUrl?: string;
   dateSigned: string;
   preceptorInitials: string;

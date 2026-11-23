@@ -284,8 +284,8 @@ export async function generateStudentManualDocx(): Promise<Blob> {
               ],
               [
                 'Tab 1: Trainee Information & Instructions',
-                'Identity registration, individual student PIN security, instructions, and data persistence controls.',
-                'Fill in personal ID, ward, assigned mentor. Manage your confidential 4-digit Student PIN to prevent peer manipulation. Lock your session when stepping away from shared hospital computers.',
+                'Identity registration (Trainee Name & Trainee ID), individual student PIN security, instructions, and data persistence controls.',
+                'Fill in your Trainee Name and Trainee ID so your dossier has a permanent Cloud Database ID. Manage your confidential 4-digit Student PIN and lock your session when stepping away from shared devices.',
               ],
               [
                 'Tab 2: Part I - Tracking Matrix',
@@ -402,14 +402,35 @@ export async function generateStudentManualDocx(): Promise<Blob> {
             'Click "+ Attach Evidence" on the activity sheet. Choose "Camera" to snap a photo of your anonymized SBAR handover note, Early Warning Score chart, or ECG strip. Ensure all patient names and identification numbers are blacked out to maintain strict medical confidentiality.'
           ),
 
-          createHeading2('Step 4: Request Preceptor Verification'),
+          createHeading2('Step 4: Confirm Permanent Cloud Database Save (Pop-Up Verification)'),
           createBodyParagraph(
-            'Hand your device to your clinical preceptor or mentor on the ward. The preceptor clicks "Sign as Preceptor", enters their confidential 4-digit PIN, provides formative feedback, selects a performance rating, and draws their signature.'
+            'Immediately after you save a log, import OCR text, or attach evidence, wait 1–2 seconds for the Cloud Save Confirmation Pop-Up. You must verify the color and message before closing the app:'
+          ),
+          createBulletItem(
+            'GREEN Pop-Up ("Permanently Saved on Cloud Database"):',
+            'Confirmed! Both the Cloud Database and live server verified your entry. Your data is safe across devices and restarts.'
+          ),
+          createBulletItem(
+            'AMBER Pop-Up ("NOT Saved — Connection Problem"):',
+            'Your internet was offline or unstable. Your entry is saved on your browser ONLY. Reconnect to Wi-Fi/mobile data and click "Retry Cloud Save" until the GREEN pop-up appears.'
+          ),
+          createBulletItem(
+            'INDIGO Pop-Up ("NOT Saved — Google Sign-In Required"):',
+            'You are not signed into Google Cloud DB. Click "Sign in with Google & Save" inside the pop-up so your work is committed permanently.'
+          ),
+          createBulletItem(
+            'ROSE Pop-Up ("NOT Saved — Action Required / Error"):',
+            'Read the exact reason shown (for example, missing Trainee Name & ID in Tab 1). Complete Tab 1 first and save again.'
+          ),
+
+          createHeading2('Step 5: Request Preceptor Verification'),
+          createBodyParagraph(
+            'Hand your device to your clinical preceptor or mentor on the ward (or notify them to open your dossier on their device). The preceptor clicks "Sign as Preceptor", enters their confidential 4-digit PIN, provides formative feedback, selects a performance rating, draws their signature, and confirms the GREEN Cloud Save pop-up.'
           ),
 
           createHeading1('5. Data Persistence, Backups & Submissions'),
           createBodyParagraph(
-            'At the bottom of the "Trainee Information & Instructions" tab, you will find four data management controls:'
+            'Your logbook uses three layers of protection: (1) Browser LocalStorage for offline resilience, (2) Live Sync Server for real-time cross-device updates, and (3) Firebase Cloud Database (when signed in with Google) for permanent institutional storage. At the bottom of Tab 1 (Trainee Info & Instructions), you will also find manual backup controls:'
           ),
           createBulletItem('Start Fresh / Blank Logbook:', 'Clears all records to begin a new rotation. Use this on Day 1 to wipe sample demo records.'),
           createBulletItem('Restore Demo Sample Data:', 'Populates realistic sample patient encounters for training and practice.'),
@@ -707,6 +728,162 @@ export async function generateMentorPreceptorManualDocx(): Promise<Blob> {
 }
 
 // -------------------------------------------------------------
+// 3. GENERATE CLOUD SAVE VERIFICATION GUIDE (.DOCX)
+//    FOR STUDENTS & INSTRUCTORS / PRECEPTORS
+// -------------------------------------------------------------
+export async function generateCloudSaveVerificationGuideDocx(): Promise<Blob> {
+  const doc = new Document({
+    sections: [
+      {
+        properties: {},
+        children: [
+          new Paragraph({
+            text: 'NURSING COMPETENCY ENHANCEMENT PROGRAM (NCEP)',
+            alignment: AlignmentType.CENTER,
+            run: {
+              size: 20,
+              font: 'Calibri',
+              color: '0F766E',
+              bold: true,
+            },
+          }),
+          new Paragraph({
+            text: 'CORE COMPETENCY 1: CLINICAL JUDGMENT AND PRIORITIZATION',
+            alignment: AlignmentType.CENTER,
+            run: {
+              size: 24,
+              font: 'Calibri',
+              color: '134E4A',
+              bold: true,
+            },
+          }),
+          new Paragraph({
+            text: 'STEP-BY-STEP GUIDE: ENSURING DATA IS PERMANENTLY SAVED ON THE CLOUD DATABASE',
+            alignment: AlignmentType.CENTER,
+            spacing: { after: 220 },
+            run: {
+              size: 30,
+              font: 'Calibri',
+              color: '111827',
+              bold: true,
+            },
+          }),
+          createCalloutBox(
+            'Purpose of This Guide',
+            'Step-by-step checklist for both Students (Trainees) and Instructors (Preceptors / Mentors / Lead Educators) to verify with 100% certainty that entered clinical logs, evidence attachments, and preceptor signatures are permanently saved to the Cloud Database—and how to recognize connection or permission problems.'
+          ),
+          new Paragraph({ spacing: { after: 180 } }),
+
+          createHeading1('Part 1: How Permanent Cloud Saving Works'),
+          createBodyParagraph(
+            'The NCEP Clinical Logbook protects clinical entries across three layers, but ONLY Layer 3 guarantees permanent institutional Cloud Database storage across devices, browser resets, and app updates:'
+          ),
+          createBulletItem(
+            'Layer 1 — Browser Local Cache:',
+            'Temporarily holds your draft inside the phone or computer browser you are currently using. If browser history is cleared or you switch devices, local-only data will NOT follow you.'
+          ),
+          createBulletItem(
+            'Layer 2 — Live Session Sync Server:',
+            'Allows real-time cross-device sharing between students and mentors during active sessions.'
+          ),
+          createBulletItem(
+            'Layer 3 — Permanent Cloud Database (Firebase Firestore):',
+            'Activated when you sign in with Google ("Sign in for Cloud DB"). Whenever a student saves a log or a preceptor signs a log, the app waits for direct server confirmation from the Cloud Database before displaying the GREEN confirmation pop-up.'
+          ),
+
+          createHeading1('Part 2: Step-by-Step Guide for STUDENTS (Trainees)'),
+          createHeading2('Step 1: Sign In to the Cloud Database First'),
+          createBulletItem('Action:', 'Look at the top header bar. If you see the teal button "Sign in for Cloud DB", click it and sign in with your Google account once.'),
+          createBulletItem('Verify:', 'Your Google email appears in the header beside a green "Cloud DB" badge.'),
+
+          createHeading2('Step 2: Enter Your Trainee Name & Trainee ID in Tab 1'),
+          createBulletItem('Action:', 'Open Tab 1 ("Trainee Info & Instructions") and enter your exact Full Name and Trainee ID (e.g., NCEP-080-26).'),
+          createBulletItem('Why This Matters:', 'If Trainee Name and ID are blank, your profile has no official ID in the Cloud Database, and the system will block permanent cloud saving until they are filled.'),
+
+          createHeading2('Step 3: Fill Your Clinical Log & Attach Compressed Evidence'),
+          createBulletItem('Action:', 'Open Part I ("Tracking Matrix") or Part II ("Detailed Log Sheets"), select the clinical session (Sessions 1–18), enter Activity Date, Ward, Duration, Description of Activity, and Reflective Notes, then click Save Log Entry.'),
+          createBulletItem('Attaching Photos / Evidence:', 'When attaching SBAR notes, EWS charts, or ECG images, the app automatically checks file weight and compresses heavy photos so they upload reliably without exceeding Cloud Database size limits. Remember: attached evidence stays permanently visible to your mentor and instructor unless you explicitly remove it.'),
+
+          createHeading2('Step 4: Read the Cloud Save Confirmation Pop-Up (CRITICAL)'),
+          createBodyParagraph(
+            'After clicking Save, a brief "Saving to Cloud Database..." pop-up appears while waiting for the server. Never close the tab until the final result pop-up appears:'
+          ),
+          createBulletItem('GREEN Pop-Up — "Permanently Saved on Cloud Database":', 'SUCCESS. Both Cloud DB (Committed) and Live Server (Synced) confirmed your data. You may safely click "OK, Continue" and close or switch devices.'),
+          createBulletItem('AMBER Pop-Up — "NOT Saved to Cloud Database (Connection Problem)":', 'WARNING — NOT SAVED ON CLOUD. Your device is offline or the network dropped. Reconnect to Wi-Fi/cellular data and click the amber "Retry Cloud Save" button inside the pop-up until the GREEN pop-up appears.'),
+          createBulletItem('INDIGO Pop-Up — "NOT Saved to Cloud Database (Google Sign-In Required)":', 'WARNING — NOT SAVED ON CLOUD. Click "Sign in with Google & Save" directly in the pop-up; as soon as sign-in completes, the app automatically saves your pending log to the Cloud Database.'),
+          createBulletItem('ROSE Pop-Up — "NOT Saved to Cloud Database (Other Error)":', 'WARNING — NOT SAVED ON CLOUD. Read the specific error message (for example, incomplete Trainee Name & ID in Tab 1 or quota/permission error), resolve the issue, and save again.'),
+
+          createHeading2('Step 5: Final Student Verification Check'),
+          createBulletItem('Action:', 'Verify that the header shows the green "Cloud DB" badge (not "Offline Cache" or "DB Notice"), confirm your saved session appears in Part I & Part II, and download a weekly ".json" backup from Tab 1 as an extra offline copy.'),
+
+          new Paragraph({ spacing: { after: 140 } }),
+          createHeading1('Part 3: Step-by-Step Guide for INSTRUCTORS, PRECEPTORS & MENTORS'),
+
+          createHeading2('Step 1: Sign In to Google Cloud DB & Verify Your Staff Role'),
+          createBulletItem('Action:', 'Click "Sign in for Cloud DB" in the top bar with your Google account (or Lead Educator institutional account).'),
+          createBulletItem('Role Elevation:', 'Either switch the header Role dropdown ("Clinical Preceptor (PIN)" / "Lead Clinical Educator (PIN)") and enter your 4-digit PIN, OR enter your 4-digit PIN when prompted on any student session. Entering your PIN while signed in with Google registers your verified staff status in the Cloud Database.'),
+
+          createHeading2('Step 2: Select & Inspect the Student Dossier'),
+          createBulletItem('Action:', 'Open "Instructor & Cohorts" (for Lead Educators) or select the student dossier. Review Part II activity descriptions, reflective notes, and uploaded files in the "Evidence Vault".'),
+          createBulletItem('Note on Evidence:', 'Any evidence uploaded by the student remains visible to mentors and instructors permanently unless deleted by the student.'),
+
+          createHeading2('Step 3: Perform & Submit Your Sign-Off'),
+          createBulletItem('Part I Quick Matrix Sign:', 'Click "Pending" on any session row, enter your 4-digit Preceptor PIN, and confirm.'),
+          createBulletItem('Part II Formative Evaluation:', 'Click "Preceptor Sign-off", enter your 4-digit PIN, choose Competency Rating ("Satisfactory" / "Needs Improvement" / "Unsatisfactory"), write coaching comments, draw your digital signature, and click "Confirm & Sign Entry".'),
+          createBulletItem('Part III Final Certification (Lead Educator):', 'Once all 18 sessions are "Met", open Part III, enter the Lead Educator passcode, draw your final signature, and generate the verification hash.'),
+
+          createHeading2('Step 4: Wait for & Verify the Pop-Up Confirmation'),
+          createBodyParagraph(
+            'Do NOT walk away from the computer or close the student screen until the pop-up confirms permanent storage:'
+          ),
+          createBulletItem('GREEN Pop-Up ("Permanently Saved on Cloud Database"):', 'Displays the Action ("Preceptor Sign-Off Saved"), Trainee Name & ID, your "Signed By" Preceptor Name, and verification timestamp. Your signature is permanently saved in Firestore Cloud DB.'),
+          createBulletItem('AMBER Pop-Up ("Connection Problem"):', 'Hospital Wi-Fi or mobile signal dropped. Wait for reconnection and click "Retry Cloud Save" immediately so your sign-off is not lost.'),
+          createBulletItem('INDIGO Pop-Up ("Google Sign-In Required"):', 'Click "Sign in with Google & Save" so your signature writes permanently to Cloud DB rather than temporary local storage.'),
+          createBulletItem('ROSE Pop-Up ("Permission Denied / Other Error"):', 'If a "Permission Denied" error appears, unlock your Role in the top header using your 4-digit Preceptor PIN (or verify with the Lead Clinical Educator that your PIN is registered), then click "Retry Save".'),
+
+          createHeading2('Step 5: Cross-Check Confirmation After Saving'),
+          createBulletItem('Checklist:', 'Confirm the session badge flipped to green "Met" in Part I Matrix, your name/initials and date appear in the Preceptor column, the header status reads green "Cloud DB", and the cohort completion count updated (e.g., 15 / 18 Met).'),
+
+          new Paragraph({ spacing: { after: 140 } }),
+          createHeading1('Part 4: Quick Pop-Up Reference Table'),
+          createTable(
+            ['Pop-Up Color & Title', 'Is It Saved on Cloud Database?', 'What Caused It', 'Exact Action Required'],
+            [
+              [
+                'GREEN: Permanently Saved on Cloud Database',
+                'YES — 100% Verified & Committed',
+                'Live server AND Firebase Cloud DB confirmed the write.',
+                'Click "OK, Continue". Safe to proceed or close.',
+              ],
+              [
+                'AMBER: NOT Saved (Connection Problem)',
+                'NO — Saved Locally Only',
+                'No internet, Wi-Fi drop, firewall timeout, or unreachable Cloud DB.',
+                'Restore internet connection and click "Retry Cloud Save" until GREEN.',
+              ],
+              [
+                'INDIGO: NOT Saved (Sign-In Needed)',
+                'NO — Temporary Browser/Live Only',
+                'User is online but has not signed in via "Sign in for Cloud DB".',
+                'Click "Sign in with Google & Save" in the pop-up.',
+              ],
+              [
+                'ROSE: NOT Saved (Other Problem)',
+                'NO — Save Rejected / Incomplete',
+                'Blank Trainee Name/ID, missing Preceptor PIN permission, or quota limit.',
+                'Read the exact message shown (fix Tab 1 Name/ID or re-enter PIN) and click "Retry Save".',
+              ],
+            ]
+          ),
+        ],
+      },
+    ],
+  });
+
+  return await Packer.toBlob(doc);
+}
+
+// -------------------------------------------------------------
 // DOWNLOAD TRIGGERS (BROWSER HELPER)
 // -------------------------------------------------------------
 export async function downloadStudentManual(): Promise<void> {
@@ -727,6 +904,18 @@ export async function downloadMentorManual(): Promise<void> {
   const a = document.createElement('a');
   a.href = url;
   a.download = `NCEP_Core_Competency_1_Mentor_Preceptor_Manual_${new Date().toISOString().slice(0, 10)}.docx`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
+
+export async function downloadCloudSaveVerificationGuide(): Promise<void> {
+  const blob = await generateCloudSaveVerificationGuideDocx();
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `NCEP_Cloud_Save_Verification_Guide_Students_Instructors_${new Date().toISOString().slice(0, 10)}.docx`;
   document.body.appendChild(a);
   a.click();
   document.body.removeChild(a);

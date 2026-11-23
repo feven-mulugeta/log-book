@@ -118,6 +118,43 @@
       },
       "required": ["preceptorId", "name", "role", "title", "wardDepartment", "initials", "pin", "updatedAt"]
     },
+    "PreceptorDirectoryEntry": {
+      "title": "PreceptorDirectoryEntry",
+      "description": "Secret-free institutional directory entry storing permanent clinical ward assignments for preceptors, mentors, and lead educators.",
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "maxLength": 128,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "name": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "role": {
+          "type": "string",
+          "enum": ["preceptor", "mentor", "lead_educator"]
+        },
+        "title": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "wardDepartment": {
+          "type": "string",
+          "maxLength": 120
+        },
+        "initials": {
+          "type": "string",
+          "maxLength": 10
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": ["id", "name", "role", "title", "wardDepartment", "initials", "updatedAt"]
+    },
     "StaffMember": {
       "title": "StaffMember",
       "description": "Verified clinical preceptor, mentor, or lead educator linked to a Google Auth UID via PIN verification.",
@@ -468,6 +505,10 @@
     "/staffSecrets/{preceptorId}": {
       "schema": { "$ref": "#/entities/StaffSecret" },
       "description": "Admin-only secret PIN records for clinical preceptors and mentors."
+    },
+    "/preceptors/{preceptorId}": {
+      "schema": { "$ref": "#/entities/PreceptorDirectoryEntry" },
+      "description": "Publicly readable (to signed-in users) institutional faculty directory storing permanent ward assignments without PINs."
     },
     "/staffMembers/{userId}": {
       "schema": { "$ref": "#/entities/StaffMember" },
