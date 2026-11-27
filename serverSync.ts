@@ -1116,7 +1116,7 @@ let inMemoryStore: ServerStore = {
     {
         "id": "student-roster-NCEP-052-26-1792133226450-0",
         "traineeInfo": {
-            "traineeName": "Abdisa Beyene Gutema,",
+            "traineeName": "Abdisa Beyene Gutema",
             "traineeId": "NCEP-052-26",
             "clinicalDepartmentWard": "Medical ICU",
             "assignedClinicalPreceptor": "Sister Almaz Tefera, RN, MSc",
@@ -2245,7 +2245,7 @@ function loadStoreFromDisk() {
     {
         "id": "student-roster-NCEP-052-26-1792133226450-0",
         "traineeInfo": {
-            "traineeName": "Abdisa Beyene Gutema,",
+            "traineeName": "Abdisa Beyene Gutema",
             "traineeId": "NCEP-052-26",
             "clinicalDepartmentWard": "Medical ICU",
             "assignedClinicalPreceptor": "Sister Almaz Tefera, RN, MSc",

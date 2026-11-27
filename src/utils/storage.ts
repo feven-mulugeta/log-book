@@ -25,6 +25,7 @@ const STORAGE_KEYS = {
   COHORT_STUDENTS: 'ncep_cohort_students',
   PRECEPTOR_ROSTER: 'ncep_preceptor_roster',
   UNLOCKED_STUDENTS: 'ncep_unlocked_students_session',
+  DELETED_OFFICIAL_IDS: 'ncep_deleted_official_student_ids',
 };
 
 export type UserRole = 'trainee' | 'preceptor' | 'lead_educator';
@@ -667,68 +668,144 @@ export function lockAllStudents(): void {
   }
 }
 
+export function normalizeTraineeIdKey(traineeId?: string): string {
+  return String(traineeId || '')
+    .trim()
+    .toLowerCase()
+    .replace(/\s+/g, '');
+}
+
+export function getDeletedOfficialStudentIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEYS.DELETED_OFFICIAL_IDS);
+    if (!raw) return new Set();
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) {
+      return new Set(parsed.map((id) => normalizeTraineeIdKey(String(id))).filter(Boolean));
+    }
+  } catch (e) {
+    console.warn('[Storage] Failed to read deleted official IDs:', e);
+  }
+  return new Set();
+}
+
+export function markOfficialStudentDeleted(traineeIdOrRecordId?: string): void {
+  const key = normalizeTraineeIdKey(traineeIdOrRecordId);
+  if (!key) return;
+  try {
+    const set = getDeletedOfficialStudentIds();
+    set.add(key);
+    safeLocalStorageSet(STORAGE_KEYS.DELETED_OFFICIAL_IDS, JSON.stringify(Array.from(set)));
+  } catch (e) {
+    console.warn('[Storage] Failed to mark official student deleted:', e);
+  }
+}
+
+export function unmarkOfficialStudentDeleted(traineeIdOrRecordId?: string): void {
+  const key = normalizeTraineeIdKey(traineeIdOrRecordId);
+  if (!key) return;
+  try {
+    const set = getDeletedOfficialStudentIds();
+    if (set.delete(key)) {
+      safeLocalStorageSet(STORAGE_KEYS.DELETED_OFFICIAL_IDS, JSON.stringify(Array.from(set)));
+    }
+  } catch (e) {
+    console.warn('[Storage] Failed to unmark official student deleted:', e);
+  }
+}
+
+export function ensureOfficialStudentsPresent(
+  list: CohortStudentRecord[],
+  ignoreDeletedIds: boolean = false
+): { students: CohortStudentRecord[]; restored: CohortStudentRecord[] } {
+  const result = Array.isArray(list) ? [...list] : [];
+  const deletedSet = ignoreDeletedIds ? new Set<string>() : getDeletedOfficialStudentIds();
+  const existingTraineeIds = new Set<string>();
+  const existingIds = new Set<string>();
+
+  for (const s of result) {
+    if (!s) continue;
+    if (s.id) existingIds.add(String(s.id).trim());
+    const tKey = normalizeTraineeIdKey(s.traineeInfo?.traineeId);
+    if (tKey) existingTraineeIds.add(tKey);
+  }
+
+  const restored: CohortStudentRecord[] = [];
+  for (const official of OFFICIAL_IMPORTED_STUDENTS) {
+    const tKey = normalizeTraineeIdKey(official.traineeInfo?.traineeId);
+    if (!tKey) continue;
+    if (existingTraineeIds.has(tKey) || deletedSet.has(tKey)) {
+      continue;
+    }
+
+    let safeId = official.id;
+    if (existingIds.has(safeId)) {
+      let suffix = 1;
+      let candidate = `${official.id}-restored`;
+      while (existingIds.has(candidate)) {
+        suffix += 1;
+        candidate = `${official.id}-restored-${suffix}`;
+      }
+      safeId = candidate;
+    }
+
+    const normalized = normalizeStudentRecord(
+      {
+        ...official,
+        id: safeId,
+        studentPin: official.studentPin || official.traineeInfo?.studentPin,
+      },
+      result.length
+    );
+
+    existingIds.add(normalized.id);
+    existingTraineeIds.add(tKey);
+    result.push(normalized);
+    restored.push(normalized);
+  }
+
+  return { students: result, restored };
+}
+
 export function getStoredCohortStudents(): CohortStudentRecord[] {
   try {
     const raw = localStorage.getItem(STORAGE_KEYS.COHORT_STUDENTS);
     if (raw) {
       const parsed = JSON.parse(raw);
       if (Array.isArray(parsed) && parsed.length > 0) {
-        // Ensure official enrolled students (Abdisa ... Zinet) are loaded
-        const hasOfficial = parsed.some(
-          (s) =>
-            s?.traineeInfo?.traineeName?.includes('Abdisa') ||
-            s?.traineeInfo?.traineeName?.includes('Zinet') ||
-            s?.traineeInfo?.traineeName?.includes('Abel Gatew')
-        );
+        const seenIds = new Set<string>();
+        const seenTraineeIds = new Set<string>();
+        const sanitized: CohortStudentRecord[] = [];
 
-        if (hasOfficial) {
-          const seenIds = new Set<string>();
-          const seenTraineeIds = new Set<string>();
-          const sanitized: CohortStudentRecord[] = [];
+        for (let i = 0; i < parsed.length; i++) {
+          const item = parsed[i];
+          if (!item || !item.traineeInfo) continue;
 
-          for (let i = 0; i < parsed.length; i++) {
-            const item = parsed[i];
-            if (!item || !item.traineeInfo) continue;
-
-            const traineeId = item.traineeInfo.traineeId?.trim();
-            // If we already added this traineeId, skip duplicate
-            if (traineeId && seenTraineeIds.has(traineeId)) {
-              continue;
-            }
-            if (traineeId) seenTraineeIds.add(traineeId);
-
-            let safeId = item.id ? String(item.id).trim() : `student-${Date.now()}-${i}`;
-            if (seenIds.has(safeId)) {
-              safeId = `${safeId}-${Date.now().toString().slice(-4)}-${i}`;
-            }
-            seenIds.add(safeId);
-
-            const pin = item.studentPin || item.traineeInfo?.studentPin || computeDefaultStudentPin(traineeId, i);
-            const normalized = normalizeStudentRecord({ ...item, id: safeId, studentPin: pin }, i);
-            sanitized.push(normalized);
+          const traineeId = item.traineeInfo.traineeId?.trim();
+          const traineeIdKey = normalizeTraineeIdKey(traineeId);
+          // If we already added this traineeId, skip duplicate
+          if (traineeIdKey && seenTraineeIds.has(traineeIdKey)) {
+            continue;
           }
+          if (traineeIdKey) seenTraineeIds.add(traineeIdKey);
 
-          // One-time merge for newly added official student Cohort One (NCEP- 080-26, Medical, Sr xx yy)
-          const mergedStudentKey = 'ncep_official_student_cohort_one_080_merged';
-          if (!localStorage.getItem(mergedStudentKey)) {
-            const existsCohortOne = sanitized.some(
-              (s) =>
-                s?.traineeInfo?.traineeId?.replace(/\s+/g, '').toLowerCase() === 'ncep-080-26' ||
-                s?.traineeInfo?.traineeName?.trim().toLowerCase() === 'cohort one'
-            );
-            if (!existsCohortOne) {
-              const cohortOneOfficial = OFFICIAL_IMPORTED_STUDENTS.find(
-                (s) => s.id === 'student-roster-NCEP-080-26-1792145000000-0'
-              );
-              if (cohortOneOfficial) {
-                sanitized.push(normalizeStudentRecord(cohortOneOfficial, sanitized.length));
-                safeLocalStorageSet(STORAGE_KEYS.COHORT_STUDENTS, JSON.stringify(sanitized));
-              }
-            }
-            safeLocalStorageSet(mergedStudentKey, 'true');
+          let safeId = item.id ? String(item.id).trim() : `student-${Date.now()}-${i}`;
+          if (seenIds.has(safeId)) {
+            safeId = `${safeId}-${Date.now().toString().slice(-4)}-${i}`;
           }
+          seenIds.add(safeId);
 
-          if (sanitized.length > 0) return sanitized;
+          const pin = item.studentPin || item.traineeInfo?.studentPin || computeDefaultStudentPin(traineeId, i);
+          const normalized = normalizeStudentRecord({ ...item, id: safeId, studentPin: pin }, i);
+          sanitized.push(normalized);
+        }
+
+        if (sanitized.length > 0) {
+          const { students: ensured, restored } = ensureOfficialStudentsPresent(sanitized);
+          if (restored.length > 0) {
+            safeLocalStorageSet(STORAGE_KEYS.COHORT_STUDENTS, JSON.stringify(ensured));
+          }
+          return ensured;
         }
       }
     }

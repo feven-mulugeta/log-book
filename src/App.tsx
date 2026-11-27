@@ -63,6 +63,11 @@ import {
   normalizeFinalSignoff,
   mergeDetailedLogArrays,
   resolvePreceptorWard,
+  ensureOfficialStudentsPresent,
+  markOfficialStudentDeleted,
+  unmarkOfficialStudentDeleted,
+  normalizeTraineeIdKey,
+  OFFICIAL_IMPORTED_STUDENTS,
   UserRole,
 } from './utils/storage';
 import { NCEP_SESSIONS_DEFINITIONS } from './data/ncepData';
@@ -384,16 +389,37 @@ export default function App() {
         const safeRemoteCohort = remoteCohort.map((s, idx) => normalizeStudentRecord(s, idx));
 
         setCohortStudents((prev) => {
-          const mergedCohort = safeRemoteCohort.map((remoteItem) => {
-            const localMatch = prev.find(
-              (l) =>
-                l.id === remoteItem.id ||
-                (l.traineeInfo?.traineeId &&
-                  remoteItem.traineeInfo?.traineeId &&
-                  l.traineeInfo.traineeId === remoteItem.traineeInfo.traineeId)
-            );
+          const mergedFromRemote = safeRemoteCohort.map((remoteItem) => {
+            const remoteTKey = normalizeTraineeIdKey(remoteItem.traineeInfo?.traineeId);
+            const localMatch = prev.find((l) => {
+              const localTKey = normalizeTraineeIdKey(l.traineeInfo?.traineeId);
+              if (remoteTKey && localTKey) {
+                return localTKey === remoteTKey;
+              }
+              return l.id === remoteItem.id;
+            });
             return localMatch ? mergeStudentWithRemote(localMatch, remoteItem) : remoteItem;
           });
+
+          // Preserve local students that were missing from a partial/stale remote broadcast
+          const mergedIds = new Set(mergedFromRemote.map((s) => s.id));
+          const mergedTKeys = new Set(
+            mergedFromRemote
+              .map((s) => normalizeTraineeIdKey(s.traineeInfo?.traineeId))
+              .filter(Boolean)
+          );
+          for (const localItem of prev) {
+            const localTKey = normalizeTraineeIdKey(localItem.traineeInfo?.traineeId);
+            const hasId = mergedIds.has(localItem.id);
+            const hasTraineeId = Boolean(localTKey && mergedTKeys.has(localTKey));
+            if (!hasId && !hasTraineeId) {
+              mergedFromRemote.push(localItem);
+              mergedIds.add(localItem.id);
+              if (localTKey) mergedTKeys.add(localTKey);
+            }
+          }
+
+          const { students: mergedCohort } = ensureOfficialStudentsPresent(mergedFromRemote);
 
           // Sync active student state if the active student is in the updated cohort
           const activeId = currentStudentRosterIdRef.current;
@@ -1310,9 +1336,9 @@ export default function App() {
         await flushOfflineQueue(wasOfflineRef.current);
         if (cancelled) return;
 
-        const currentRoster = cohortStudentsRef.current;
+        const { students: ensuredRoster } = ensureOfficialStudentsPresent(cohortStudentsRef.current);
         const pinLookup: Record<string, string> = {};
-        for (const s of currentRoster) {
+        for (const s of ensuredRoster) {
           const pin = getStudentPin(s);
           pinLookup[s.id] = pin;
           pinLookup[toFirestoreSafeId(s.id)] = pin;
@@ -1322,7 +1348,7 @@ export default function App() {
         if (isRootAdmin) {
           await seedInitialInstitutionalDataIfAdmin(
             firebaseUser,
-            currentRoster,
+            ensuredRoster,
             getStoredPreceptors()
           );
           if (cancelled) return;
@@ -1357,26 +1383,88 @@ export default function App() {
 
         if (cancelled) return;
 
+        let mergedAfterCloud = [...cohortStudentsRef.current];
         if (remoteStudents.length > 0) {
-          setCohortStudents((prev) => {
-            const copy = [...prev];
-            for (const remote of remoteStudents) {
-              const idx = copy.findIndex(
-                (s) =>
-                  toFirestoreSafeId(s.id) === remote.id ||
-                  (s.traineeInfo?.traineeId &&
-                    remote.traineeInfo?.traineeId &&
-                    s.traineeInfo.traineeId === remote.traineeInfo.traineeId)
-              );
-              if (idx >= 0) {
-                copy[idx] = mergeStudentWithRemote(copy[idx], remote);
-              } else {
-                copy.unshift(remote);
+          for (const remote of remoteStudents) {
+            const remoteTKey = normalizeTraineeIdKey(remote.traineeInfo?.traineeId);
+            const idx = mergedAfterCloud.findIndex((s) => {
+              const localTKey = normalizeTraineeIdKey(s.traineeInfo?.traineeId);
+              if (remoteTKey && localTKey) {
+                return localTKey === remoteTKey;
+              }
+              return toFirestoreSafeId(s.id) === remote.id;
+            });
+            if (idx >= 0) {
+              mergedAfterCloud[idx] = mergeStudentWithRemote(mergedAfterCloud[idx], remote);
+            } else {
+              mergedAfterCloud.unshift(remote);
+            }
+          }
+        }
+
+        const { students: cohortWithOfficials, restored: restoredOfficials } =
+          ensureOfficialStudentsPresent(mergedAfterCloud);
+        mergedAfterCloud = cohortWithOfficials;
+
+        if (remoteStudents.length > 0 || restoredOfficials.length > 0) {
+          setCohortStudents(mergedAfterCloud);
+          saveStoredCohortStudents(mergedAfterCloud);
+        }
+
+        // If Root Admin or Staff sees an official cohort member (like Abdisa Beyene Gutema NCEP-052-26)
+        // missing from Cloud Firestore (e.g. slot overwritten by another trainee or deleted), restore it to Cloud DB.
+        if ((isRootAdmin || staffVerified) && !cancelled) {
+          const toPersistToCloud = new Map<string, CohortStudentRecord>();
+          for (const r of restoredOfficials) {
+            toPersistToCloud.set(r.id, r);
+          }
+          if (isRootAdmin && remoteStudents.length > 0) {
+            const remoteTraineeKeys = new Set(
+              remoteStudents
+                .map((r) => normalizeTraineeIdKey(r.traineeInfo?.traineeId))
+                .filter(Boolean)
+            );
+            const officialKeys = new Set(
+              OFFICIAL_IMPORTED_STUDENTS.map((o) =>
+                normalizeTraineeIdKey(o.traineeInfo?.traineeId)
+              ).filter(Boolean)
+            );
+            for (const s of mergedAfterCloud) {
+              const tKey = normalizeTraineeIdKey(s.traineeInfo?.traineeId);
+              if (tKey && officialKeys.has(tKey) && !remoteTraineeKeys.has(tKey)) {
+                // Ensure the restored record doesn't overwrite a remote doc occupied by a different trainee
+                const collidingRemote = remoteStudents.find(
+                  (r) =>
+                    r.id === toFirestoreSafeId(s.id) &&
+                    normalizeTraineeIdKey(r.traineeInfo?.traineeId) !== tKey
+                );
+                const safeStudent = collidingRemote
+                  ? { ...s, id: `${s.id}-restored` }
+                  : s;
+                toPersistToCloud.set(safeStudent.id, safeStudent);
               }
             }
-            return copy;
-          });
+          }
 
+          for (const restoredStudent of toPersistToCloud.values()) {
+            if (cancelled) break;
+            try {
+              await saveStudentDossierToFirestore(firebaseUser, restoredStudent, {
+                isStaff: true,
+                claimPin: getStudentPin(restoredStudent),
+              });
+              cloudSync.syncStudentNow(
+                restoredStudent,
+                'preceptor',
+                `Restored official student ${restoredStudent.traineeInfo.traineeName || restoredStudent.traineeInfo.traineeId}`
+              );
+            } catch (restoreErr) {
+              console.warn('[FirestoreSync] Could not restore official student:', restoreErr);
+            }
+          }
+        }
+
+        if (remoteStudents.length > 0) {
           // If current active student matches a restored Firestore record, hydrate active state safely
           const activeSafeId = toFirestoreSafeId(currentStudentRosterIdRef.current);
           const matchedRemote = remoteStudents.find(
@@ -1833,6 +1921,7 @@ export default function App() {
 
   const handleAddCohortStudent = (newRecord: CohortStudentRecord) => {
     const normalized = normalizeStudentRecord(newRecord);
+    unmarkOfficialStudentDeleted(normalized.traineeInfo?.traineeId || normalized.id);
     const hasConflict = cohortStudents.some((s) => s.id === normalized.id);
     const resolvedId =
       hasConflict || !normalized.id ? `student-add-${Date.now()}` : normalized.id;
@@ -1857,8 +1946,17 @@ export default function App() {
   };
 
   const handleDeleteCohortStudent = (studentId: string) => {
+    const targetStudent = cohortStudentsRef.current.find(
+      (s) => s.id === studentId || s.traineeInfo?.traineeId === studentId
+    );
+    if (targetStudent?.traineeInfo?.traineeId) {
+      markOfficialStudentDeleted(targetStudent.traineeInfo.traineeId);
+    } else {
+      markOfficialStudentDeleted(studentId);
+    }
+
     if (firebaseUser && isRootAdmin) {
-      deleteStudentFromFirestoreIfAdmin(firebaseUser, studentId).catch((e) =>
+      deleteStudentFromFirestoreIfAdmin(firebaseUser, targetStudent?.id || studentId).catch((e) =>
         console.warn('[FirestoreSync] Delete failed:', e)
       );
     }
@@ -2464,40 +2562,64 @@ export default function App() {
     const currentId = currentStudentRosterIdRef.current;
     const currentCohort = cohortStudentsRef.current;
     const trimmedTraineeId = normalizedInfo.traineeId.trim();
+    const nextTraineeKey = normalizeTraineeIdKey(trimmedTraineeId);
     const hasIdentity = Boolean(normalizedInfo.traineeName.trim() || trimmedTraineeId);
+
+    const currentSlotRecord = currentCohort.find((s) => s.id === currentId);
+    const prevSlotTraineeKey = normalizeTraineeIdKey(currentSlotRecord?.traineeInfo?.traineeId);
+    const existingOtherByTraineeId = nextTraineeKey
+      ? currentCohort.find(
+          (s) => s.id !== currentId && normalizeTraineeIdKey(s.traineeInfo?.traineeId) === nextTraineeKey
+        )
+      : undefined;
 
     let resolvedId = currentId;
     let promotedFromBlank = false;
+    let switchedToDifferentSlot = false;
 
     if (String(currentId || '').startsWith('student-blank-') && hasIdentity) {
-      const existingByTraineeId = trimmedTraineeId
-        ? currentCohort.find(
-            (s) =>
-              (s.traineeInfo?.traineeId || '').trim().toLowerCase() ===
-              trimmedTraineeId.toLowerCase()
-          )
-        : undefined;
-
-      if (existingByTraineeId) {
-        resolvedId = existingByTraineeId.id;
+      if (existingOtherByTraineeId) {
+        resolvedId = existingOtherByTraineeId.id;
       } else {
         resolvedId = `student-enrolled-${Date.now()}`;
       }
       promotedFromBlank = true;
       setCurrentStudentRosterId(resolvedId);
       setStudentUnlocked(trimmedTraineeId || resolvedId, true);
+    } else if (existingOtherByTraineeId) {
+      // Trainee entered a Trainee ID that belongs to another roster record — switch to it rather than overwriting current slot
+      resolvedId = existingOtherByTraineeId.id;
+      switchedToDifferentSlot = true;
+      setCurrentStudentRosterId(resolvedId);
+      setStudentUnlocked(trimmedTraineeId || resolvedId, true);
+    } else if (
+      userRole === 'trainee' &&
+      prevSlotTraineeKey &&
+      nextTraineeKey &&
+      prevSlotTraineeKey !== nextTraineeKey
+    ) {
+      // Protect existing enrolled trainees (like default Abdisa Beyene Gutema / NCEP-052-26)
+      // from being overwritten in place when another trainee types their own Trainee ID in Tab 1
+      resolvedId = `student-enrolled-${Date.now()}`;
+      switchedToDifferentSlot = true;
+      setCurrentStudentRosterId(resolvedId);
+      setStudentUnlocked(trimmedTraineeId || resolvedId, true);
+    }
+
+    if (nextTraineeKey) {
+      unmarkOfficialStudentDeleted(nextTraineeKey);
     }
 
     const updatedRecord: CohortStudentRecord = normalizeStudentRecord({
       id: resolvedId,
       traineeInfo: normalizedInfo,
-      detailedLogs: activeLogs,
-      finalSignoff: activeSignoff,
+      detailedLogs: switchedToDifferentSlot ? [] : activeLogs,
+      finalSignoff: switchedToDifferentSlot ? normalizeFinalSignoff({}) : activeSignoff,
       studentPin: normalizedInfo.studentPin || getStudentPin({
         id: resolvedId,
         traineeInfo: normalizedInfo,
-        detailedLogs: activeLogs,
-        finalSignoff: activeSignoff,
+        detailedLogs: switchedToDifferentSlot ? [] : activeLogs,
+        finalSignoff: switchedToDifferentSlot ? normalizeFinalSignoff({}) : activeSignoff,
         updatedAt: new Date().toISOString(),
       }),
       updatedAt: new Date().toISOString(),
@@ -2514,30 +2636,45 @@ export default function App() {
     const matchIdx = currentCohort.findIndex(
       (s) =>
         s.id === resolvedId ||
-        (trimmedTraineeId &&
-          (s.traineeInfo?.traineeId || '').trim().toLowerCase() === trimmedTraineeId.toLowerCase())
+        (nextTraineeKey &&
+          normalizeTraineeIdKey(s.traineeInfo?.traineeId) === nextTraineeKey)
     );
 
     if (matchIdx >= 0) {
       const existingEntry = normalizeStudentRecord(currentCohort[matchIdx]);
+      const mergedLogs = switchedToDifferentSlot
+        ? existingEntry.detailedLogs
+        : mergeDetailedLogArrays(existingEntry.detailedLogs, activeLogs);
+      const mergedSignoff = switchedToDifferentSlot
+        ? existingEntry.finalSignoff
+        : activeSignoff.isCertified
+          ? activeSignoff
+          : existingEntry.finalSignoff;
+
       const mergedEntry = normalizeStudentRecord({
         ...existingEntry,
         id: existingEntry.id,
         traineeInfo: updatedRecord.traineeInfo,
-        detailedLogs: mergeDetailedLogArrays(existingEntry.detailedLogs, activeLogs),
-        finalSignoff: activeSignoff.isCertified ? activeSignoff : existingEntry.finalSignoff,
+        detailedLogs: mergedLogs,
+        finalSignoff: mergedSignoff,
         studentPin: updatedRecord.traineeInfo.studentPin || existingEntry.studentPin,
         updatedAt: updatedRecord.updatedAt,
       });
       resolvedId = mergedEntry.id;
       updatedRecord.id = mergedEntry.id;
       updatedRecord.detailedLogs = mergedEntry.detailedLogs;
-      if (promotedFromBlank) {
+      updatedRecord.finalSignoff = mergedEntry.finalSignoff;
+      if (promotedFromBlank || switchedToDifferentSlot) {
         setDetailedLogs(mergedEntry.detailedLogs);
+        setFinalSignoff(mergedEntry.finalSignoff);
         setCurrentStudentRosterId(mergedEntry.id);
       }
       nextCohort = currentCohort.map((s, i) => (i === matchIdx ? mergedEntry : s));
     } else if (hasIdentity) {
+      if (switchedToDifferentSlot) {
+        setDetailedLogs(updatedRecord.detailedLogs);
+        setFinalSignoff(updatedRecord.finalSignoff);
+      }
       nextCohort = [updatedRecord, ...currentCohort];
     } else {
       nextCohort = currentCohort;
