@@ -13,6 +13,7 @@ import {
   Sparkles,
   Copy,
   Check,
+  UploadCloud,
 } from 'lucide-react';
 import { cloudSync, SyncStatus, SyncNotification } from '../utils/cloudSync';
 import { CohortStudentRecord } from '../types/nursing';
@@ -21,12 +22,18 @@ interface CloudSyncIndicatorProps {
   currentStudent: CohortStudentRecord;
   onForceSync: () => void;
   userRole: 'trainee' | 'preceptor' | 'lead_educator';
+  isOnline?: boolean;
+  pendingSyncCount?: number;
+  isFlushingOfflineQueue?: boolean;
 }
 
 export function CloudSyncIndicator({
   currentStudent,
   onForceSync,
   userRole,
+  isOnline = true,
+  pendingSyncCount = 0,
+  isFlushingOfflineQueue = false,
 }: CloudSyncIndicatorProps) {
   const [status, setStatus] = useState<SyncStatus>('connecting');
   const [liveDevicesCount, setLiveDevicesCount] = useState(1);
@@ -78,6 +85,42 @@ export function CloudSyncIndicator({
   };
 
   const getStatusBadge = () => {
+    if (!isOnline) {
+      return (
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-300 text-[11px] font-semibold cursor-pointer hover:bg-amber-100 transition-colors">
+          <WifiOff className="w-3 h-3 text-amber-700" />
+          <span className="hidden sm:inline">
+            Offline · Saved on Phone{pendingSyncCount > 0 ? ` (${pendingSyncCount} pending)` : ''}
+          </span>
+          <span className="sm:hidden">
+            Offline{pendingSyncCount > 0 ? ` (${pendingSyncCount})` : ''}
+          </span>
+        </div>
+      );
+    }
+
+    if (isFlushingOfflineQueue) {
+      return (
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-50 text-teal-900 border border-teal-300 text-[11px] font-semibold cursor-pointer">
+          <RefreshCw className="w-3 h-3 text-teal-700 animate-spin" />
+          <span className="hidden sm:inline">
+            Uploading {pendingSyncCount > 0 ? `${pendingSyncCount} ` : ''}to Cloud...
+          </span>
+          <span className="sm:hidden">Syncing...</span>
+        </div>
+      );
+    }
+
+    if (pendingSyncCount > 0) {
+      return (
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-50 text-amber-900 border border-amber-300 text-[11px] font-semibold cursor-pointer hover:bg-amber-100 transition-colors">
+          <UploadCloud className="w-3 h-3 text-amber-700" />
+          <span className="hidden sm:inline">{pendingSyncCount} Pending Cloud Upload</span>
+          <span className="sm:hidden">{pendingSyncCount} Pending</span>
+        </div>
+      );
+    }
+
     switch (status) {
       case 'connected':
         return (
@@ -110,7 +153,7 @@ export function CloudSyncIndicator({
         return (
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-slate-100 text-slate-700 border border-slate-300 text-[11px] font-medium cursor-pointer">
             <WifiOff className="w-3 h-3 text-slate-400" />
-            <span>Local Storage</span>
+            <span>Saved on Phone</span>
           </div>
         );
     }
@@ -283,17 +326,25 @@ export function CloudSyncIndicator({
                   <span>Name: <strong>{currentStudent?.traineeInfo?.traineeName || 'Trainee'}</strong></span>
                   <span>Ward: <strong>{currentStudent?.traineeInfo?.clinicalDepartmentWard || 'Ward 4B'}</strong></span>
                 </div>
-                <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px]">
+                <div className="pt-2 border-t border-slate-200 flex items-center justify-between text-[11px] gap-2 flex-wrap">
                   <span className="text-slate-500">
-                    Connection Protocol: <strong>{status === 'connected' ? 'WebSocket (Sub-second Live)' : 'HTTP Cloud Polling'}</strong>
+                    Connection:{' '}
+                    <strong>
+                      {!isOnline
+                        ? `Offline Mode (Phone Storage · ${pendingSyncCount} Pending Upload)`
+                        : status === 'connected'
+                          ? 'WebSocket (Sub-second Live)'
+                          : 'HTTP Cloud Sync'}
+                    </strong>
                   </span>
                   <button
                     type="button"
                     onClick={handleManualSync}
-                    className="text-teal-800 hover:underline font-bold flex items-center gap-1"
+                    disabled={!isOnline || isSyncingManually || isFlushingOfflineQueue}
+                    className="text-teal-800 hover:underline font-bold flex items-center gap-1 disabled:opacity-50"
                   >
-                    <RefreshCw className={`w-3 h-3 ${isSyncingManually ? 'animate-spin' : ''}`} />
-                    <span>Re-sync Now</span>
+                    <RefreshCw className={`w-3 h-3 ${isSyncingManually || isFlushingOfflineQueue ? 'animate-spin' : ''}`} />
+                    <span>{pendingSyncCount > 0 ? `Upload ${pendingSyncCount} Queued Now` : 'Re-sync Now'}</span>
                   </button>
                 </div>
               </div>

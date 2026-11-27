@@ -24,6 +24,9 @@ import {
   LogIn,
   LogOut,
   AlertCircle,
+  WifiOff,
+  UploadCloud,
+  Smartphone,
 } from 'lucide-react';
 import {
   TraineeInformation,
@@ -102,6 +105,17 @@ import {
   reconnectFirestoreNetwork,
 } from './utils/firestoreSync';
 import { isFirestoreOfflineError } from './firebase';
+import { useOnlineStatus } from './hooks/useOnlineStatus';
+import { PWAInstallButton } from './components/PWAInstallButton';
+import {
+  enqueueOfflineSyncTask,
+  removeOfflineSyncTask,
+  getPendingOfflineSyncTasks,
+  getPendingOfflineSyncCount,
+  subscribeOfflineQueueChanges,
+  saveOfflineSnapshot,
+  loadOfflineSnapshot,
+} from './utils/offlineQueue';
 
 type TabType = 'page1' | 'part1' | 'part2' | 'part3' | 'cohort' | 'ocr' | 'vault';
 
@@ -177,6 +191,19 @@ export default function App() {
   const [dismissAuthBanner, setDismissAuthBanner] = useState<boolean>(false);
   const [cloudSavePopup, setCloudSavePopup] = useState<CloudSavePopupState | null>(null);
   const [isRetryingCloudPopup, setIsRetryingCloudPopup] = useState<boolean>(false);
+  const isOnline = useOnlineStatus();
+  const [pendingQueueCount, setPendingQueueCount] = useState<number>(0);
+  const [isFlushingOfflineQueue, setIsFlushingOfflineQueue] = useState<boolean>(false);
+  const isFlushingQueueRef = useRef<boolean>(false);
+  const wasOfflineRef = useRef<boolean>(
+    typeof navigator !== 'undefined' ? navigator.onLine === false : false
+  );
+  const firebaseUserRef = useRef(firebaseUser);
+  firebaseUserRef.current = firebaseUser;
+  const isRootAdminRef = useRef(isRootAdmin);
+  isRootAdminRef.current = isRootAdmin;
+  const isFirestoreStaffRef = useRef(isFirestoreStaff);
+  isFirestoreStaffRef.current = isFirestoreStaff;
   const firestoreDebounceRef = useRef<any>(null);
   const inlineStaffCredentialRef = useRef<{ preceptor: RegisteredPreceptor; enteredPin: string } | null>(null);
   const pendingCloudRetryRef = useRef<{
@@ -440,7 +467,7 @@ export default function App() {
     };
   }, []); // Run ONCE on mount
 
-  // Sync state to local storage
+  // Sync state to local storage + high-capacity IndexedDB snapshots for offline phone persistence
   useEffect(() => {
     saveStoredTraineeInfo(traineeInfo);
   }, [traineeInfo]);
@@ -459,7 +486,123 @@ export default function App() {
 
   useEffect(() => {
     saveStoredCohortStudents(cohortStudents);
+    saveOfflineSnapshot('cohortStudents', cohortStudents);
   }, [cohortStudents]);
+
+  useEffect(() => {
+    if (
+      String(currentStudentRosterId || '').startsWith('student-blank-') &&
+      !traineeInfo?.traineeName?.trim() &&
+      !traineeInfo?.traineeId?.trim() &&
+      detailedLogs.length === 0
+    ) {
+      return;
+    }
+    saveOfflineSnapshot('activeDossier', {
+      rosterId: currentStudentRosterId,
+      traineeInfo,
+      detailedLogs,
+      finalSignoff,
+    });
+  }, [currentStudentRosterId, traineeInfo, detailedLogs, finalSignoff]);
+
+  // Hydrate phone IndexedDB offline snapshots & subscribe to pending sync queue count on mount
+  useEffect(() => {
+    let active = true;
+    const refreshQueueCount = () => {
+      getPendingOfflineSyncCount().then((count) => {
+        if (active) setPendingQueueCount(count);
+      });
+    };
+    refreshQueueCount();
+    const unsubQueue = subscribeOfflineQueueChanges(refreshQueueCount);
+
+    (async () => {
+      try {
+        const [preceptorsSnap, cohortSnap, activeSnap] = await Promise.all([
+          loadOfflineSnapshot<RegisteredPreceptor[]>('preceptors'),
+          loadOfflineSnapshot<CohortStudentRecord[]>('cohortStudents'),
+          loadOfflineSnapshot<{
+            rosterId: string;
+            traineeInfo: TraineeInformation;
+            detailedLogs: DetailedActivityLogSheet[];
+            finalSignoff: FinalCompetencySignoff;
+          }>('activeDossier'),
+        ]);
+        if (!active) return;
+
+        if (preceptorsSnap?.value && Array.isArray(preceptorsSnap.value) && preceptorsSnap.value.length > 0) {
+          const currentLocal = getStoredPreceptors();
+          if (currentLocal.length === 0) {
+            saveStoredPreceptors(preceptorsSnap.value);
+            window.dispatchEvent(new CustomEvent('ncep-preceptors-updated', { detail: preceptorsSnap.value }));
+          }
+        }
+
+        if (cohortSnap?.value && Array.isArray(cohortSnap.value) && cohortSnap.value.length > 0) {
+          setCohortStudents((prev) => {
+            const copy = [...prev];
+            let changed = false;
+            for (const snapItem of cohortSnap.value) {
+              const normSnap = normalizeStudentRecord(snapItem);
+              const idx = copy.findIndex(
+                (l) =>
+                  l.id === normSnap.id ||
+                  (l.traineeInfo?.traineeId &&
+                    normSnap.traineeInfo?.traineeId &&
+                    l.traineeInfo.traineeId === normSnap.traineeInfo.traineeId)
+              );
+              if (idx >= 0) {
+                const merged = mergeStudentWithRemote(copy[idx], normSnap);
+                if (computeStudentHash(merged) !== computeStudentHash(copy[idx])) {
+                  copy[idx] = merged;
+                  changed = true;
+                }
+              } else {
+                copy.unshift(normSnap);
+                changed = true;
+              }
+            }
+            return changed ? copy : prev;
+          });
+        }
+
+        if (activeSnap?.value && activeSnap.value.rosterId === currentStudentRosterIdRef.current) {
+          const snapRecord = normalizeStudentRecord({
+            id: activeSnap.value.rosterId,
+            traineeInfo: activeSnap.value.traineeInfo,
+            detailedLogs: activeSnap.value.detailedLogs,
+            finalSignoff: activeSnap.value.finalSignoff,
+            updatedAt: activeSnap.updatedAt || '',
+          });
+          const currRecord = normalizeStudentRecord({
+            id: currentStudentRosterIdRef.current,
+            traineeInfo: traineeInfoRef.current,
+            detailedLogs: detailedLogsRef.current,
+            finalSignoff: finalSignoffRef.current,
+            updatedAt: '',
+          });
+          const merged = mergeStudentWithRemote(currRecord, snapRecord);
+          if (computeStudentHash(merged) !== computeStudentHash(currRecord)) {
+            isRemoteUpdateRef.current = true;
+            setTraineeInfo(merged.traineeInfo);
+            setDetailedLogs(merged.detailedLogs);
+            setFinalSignoff(merged.finalSignoff);
+            setTimeout(() => {
+              isRemoteUpdateRef.current = false;
+            }, 350);
+          }
+        }
+      } catch (err) {
+        console.warn('[OfflineDB] Snapshot hydration note:', err);
+      }
+    })();
+
+    return () => {
+      active = false;
+      unsubQueue();
+    };
+  }, []);
 
   // Helper: Classify Firestore errors cleanly without exposing raw offline JSON
   const classifyFirestoreError = (err: unknown): { offline: boolean; message: string } => {
@@ -643,6 +786,7 @@ export default function App() {
         isStaff: staffOverride ?? (isRootAdmin || isFirestoreStaff),
         claimPin: getStudentPin(record),
       });
+      await removeOfflineSyncTask(`student:${safeId}`);
       setFirestoreSaveStatus('saved');
       setIsFirestoreOffline(false);
     } catch (err: any) {
@@ -651,11 +795,113 @@ export default function App() {
       setIsFirestoreOffline(classified.offline);
       setFirestoreErrorMsg(classified.message);
       if (classified.offline) {
-        console.warn('[FirestoreSync] Client offline during save; local + server backup retained.');
+        console.warn('[FirestoreSync] Client offline during save; offline phone backup retained.');
       } else {
         console.error('[FirestoreSync] Save failed:', err);
       }
     }
+  };
+
+  // Flush all queued offline changes to Cloud Firestore & Live Sync once internet returns
+  const flushOfflineQueue = async (showSuccessPopup = false): Promise<number> => {
+    if (isFlushingQueueRef.current) return 0;
+    if (typeof navigator !== 'undefined' && navigator.onLine === false) return 0;
+
+    const tasks = await getPendingOfflineSyncTasks();
+    if (tasks.length === 0) return 0;
+
+    const user = firebaseUserRef.current;
+    if (!user || !user.emailVerified) {
+      return 0;
+    }
+
+    isFlushingQueueRef.current = true;
+    setIsFlushingOfflineQueue(true);
+    setFirestoreSaveStatus('saving');
+    let syncedCount = 0;
+
+    try {
+      await reconnectFirestoreNetwork();
+
+      for (const task of tasks) {
+        if (typeof navigator !== 'undefined' && navigator.onLine === false) break;
+        try {
+          if (task.kind === 'preceptors') {
+            await cloudSync.syncPreceptors(task.preceptors);
+            await savePreceptorsRosterToFirestore(user, task.preceptors, task.deletedIds);
+            await removeOfflineSyncTask(task.id);
+            syncedCount += 1;
+          } else if (task.kind === 'student') {
+            if (task.inlineStaff?.preceptor && task.inlineStaff?.enteredPin) {
+              await registerStaffMemberInFirestore(
+                user,
+                task.inlineStaff.preceptor,
+                task.inlineStaff.enteredPin
+              );
+              setIsFirestoreStaff(true);
+            }
+            await cloudSync.syncStudentNow(task.record, task.roleSource, task.actionTitle);
+            await saveStudentDossierToFirestore(user, task.record, {
+              isStaff: Boolean(
+                task.isStaffAction || isRootAdminRef.current || isFirestoreStaffRef.current
+              ),
+              claimPin: getStudentPin(task.record),
+            });
+            await removeOfflineSyncTask(task.id);
+            syncedCount += 1;
+          } else if (task.kind === 'attachment_delete') {
+            await removeAttachmentFromFirestore(
+              user,
+              task.studentId,
+              task.sessionNumber,
+              task.attachmentId,
+              task.remainingAttachments
+            );
+            await removeOfflineSyncTask(task.id);
+            syncedCount += 1;
+          }
+        } catch (err) {
+          const classified = classifyFirestoreError(err);
+          setIsFirestoreOffline(classified.offline);
+          setFirestoreSaveStatus('error');
+          setFirestoreErrorMsg(classified.message);
+          if (classified.offline) break;
+          console.warn('[OfflineQueue] Task retry failed:', err);
+        }
+      }
+
+      const remaining = await getPendingOfflineSyncCount();
+      setPendingQueueCount(remaining);
+
+      if (syncedCount > 0 && remaining === 0) {
+        setFirestoreSaveStatus('saved');
+        setIsFirestoreOffline(false);
+        setFirestoreErrorMsg(null);
+      }
+
+      if (syncedCount > 0 && showSuccessPopup) {
+        setCloudSavePopup({
+          status: 'saved',
+          actionTitle: `Back Online — ${syncedCount} Offline Change${syncedCount === 1 ? '' : 's'} Permanently Saved to Cloud`,
+          roleLabel:
+            userRole === 'lead_educator'
+              ? 'Lead Clinical Educator'
+              : userRole === 'preceptor'
+                ? 'Clinical Preceptor / Mentor'
+                : 'Student / Trainee',
+          studentName: traineeInfoRef.current?.traineeName || 'Active Dossier',
+          studentId: traineeInfoRef.current?.traineeId || '',
+          savedAtIso: new Date().toISOString(),
+          liveServerSaved: true,
+          cloudDbSaved: true,
+        });
+      }
+    } finally {
+      isFlushingQueueRef.current = false;
+      setIsFlushingOfflineQueue(false);
+    }
+
+    return syncedCount;
   };
 
   // Explicit verified save + pop-up confirmation for Student Log Entries & Preceptor/Mentor Sign-Offs
@@ -706,6 +952,20 @@ export default function App() {
       return;
     }
 
+    // Persist immediately in phone IndexedDB queue BEFORE attempting network calls
+    await enqueueOfflineSyncTask({
+      id: `student:${safeId}`,
+      kind: 'student',
+      record,
+      isStaffAction: Boolean(isStaffAction || isRootAdmin || isFirestoreStaff),
+      inlineStaff: inlineStaff || inlineStaffCredentialRef.current || null,
+      actionTitle,
+      roleSource,
+      queuedAt: new Date().toISOString(),
+      attempts: 0,
+    });
+    const queueTotal = await getPendingOfflineSyncCount();
+
     pendingPreceptorsRetryRef.current = null;
     pendingCloudRetryRef.current = params;
 
@@ -720,11 +980,11 @@ export default function App() {
       evaluatorWard,
     });
 
-    // Fail fast if browser explicitly reports offline
+    // Fast offline save path: cleanly reassure user it is saved on phone and queued for cloud
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setIsFirestoreOffline(true);
       setFirestoreSaveStatus('error');
-      setFirestoreErrorMsg('Device is offline. Entry saved locally only.');
+      setFirestoreErrorMsg('Working offline. Saved safely on phone and queued to upload automatically when internet returns.');
       setCloudSavePopup({
         status: 'connection_error',
         actionTitle,
@@ -735,7 +995,9 @@ export default function App() {
         evaluatorWard,
         liveServerSaved: false,
         cloudDbSaved: false,
-        detailMessage: 'Your device currently has no internet connection (offline).',
+        savedLocallyOnPhone: true,
+        pendingQueueCount: queueTotal,
+        detailMessage: 'No internet connection right now — entry is saved on your phone.',
       });
       return;
     }
@@ -765,6 +1027,8 @@ export default function App() {
           evaluatorWard,
           liveServerSaved: false,
           cloudDbSaved: false,
+          savedLocallyOnPhone: true,
+          pendingQueueCount: queueTotal,
           detailMessage:
             liveSyncResult.error ||
             'Could not connect to the live sync server or Cloud Database.',
@@ -782,6 +1046,8 @@ export default function App() {
         evaluatorWard,
         liveServerSaved: liveSyncResult.ok,
         cloudDbSaved: false,
+        savedLocallyOnPhone: true,
+        pendingQueueCount: queueTotal,
         detailMessage: liveSyncResult.ok
           ? undefined
           : liveSyncResult.error,
@@ -813,6 +1079,7 @@ export default function App() {
         claimPin: getStudentPin(record),
       });
 
+      await removeOfflineSyncTask(`student:${safeId}`);
       setFirestoreSaveStatus('saved');
       setIsFirestoreOffline(false);
       setFirestoreErrorMsg(null);
@@ -833,6 +1100,7 @@ export default function App() {
     } catch (err: unknown) {
       const parsed = parseCloudErrorForPopup(err);
       const classified = classifyFirestoreError(err);
+      const latestQueueTotal = await getPendingOfflineSyncCount();
 
       setFirestoreSaveStatus('error');
       setIsFirestoreOffline(parsed.isConnection || classified.offline);
@@ -849,6 +1117,8 @@ export default function App() {
           evaluatorWard,
           liveServerSaved: liveSyncResult.ok,
           cloudDbSaved: false,
+          savedLocallyOnPhone: true,
+          pendingQueueCount: latestQueueTotal,
           detailMessage: parsed.message,
         });
       } else {
@@ -862,6 +1132,8 @@ export default function App() {
           evaluatorWard,
           liveServerSaved: liveSyncResult.ok,
           cloudDbSaved: false,
+          savedLocallyOnPhone: true,
+          pendingQueueCount: latestQueueTotal,
           canRetry: true,
           detailMessage: parsed.message,
         });
@@ -876,6 +1148,18 @@ export default function App() {
     deletedIds?: string[]
   ) => {
     saveStoredPreceptors(updatedPreceptors);
+    await saveOfflineSnapshot('preceptors', updatedPreceptors);
+    await enqueueOfflineSyncTask({
+      id: 'preceptors:roster',
+      kind: 'preceptors',
+      preceptors: updatedPreceptors,
+      deletedIds,
+      actionTitle,
+      queuedAt: new Date().toISOString(),
+      attempts: 0,
+    });
+    const queueTotal = await getPendingOfflineSyncCount();
+
     cloudSync.setAuthoritativePreceptorsLoaded(true);
     lastPushedPreceptorsHashRef.current = computePreceptorsHash(updatedPreceptors);
 
@@ -908,7 +1192,7 @@ export default function App() {
     if (typeof navigator !== 'undefined' && navigator.onLine === false) {
       setIsFirestoreOffline(true);
       setFirestoreSaveStatus('error');
-      setFirestoreErrorMsg('Device is offline. Preceptor wards saved locally only.');
+      setFirestoreErrorMsg('Working offline. Preceptor wards saved on phone and queued for Cloud upload.');
       setCloudSavePopup({
         status: 'connection_error',
         actionTitle,
@@ -917,6 +1201,8 @@ export default function App() {
         studentId: 'Preceptors & Mentors',
         liveServerSaved: false,
         cloudDbSaved: false,
+        savedLocallyOnPhone: true,
+        pendingQueueCount: queueTotal,
         detailMessage: 'Your device currently has no internet connection (offline).',
       });
       return;
@@ -933,6 +1219,8 @@ export default function App() {
         studentId: 'Preceptors & Mentors',
         liveServerSaved: true,
         cloudDbSaved: false,
+        savedLocallyOnPhone: true,
+        pendingQueueCount: queueTotal,
       });
       return;
     }
@@ -943,6 +1231,7 @@ export default function App() {
 
     try {
       await savePreceptorsRosterToFirestore(firebaseUser, updatedPreceptors, deletedIds);
+      await removeOfflineSyncTask('preceptors:roster');
       setFirestoreSaveStatus('saved');
       setIsFirestoreOffline(false);
       setFirestoreErrorMsg(null);
@@ -962,6 +1251,7 @@ export default function App() {
     } catch (err: unknown) {
       const parsed = parseCloudErrorForPopup(err);
       const classified = classifyFirestoreError(err);
+      const latestQueueTotal = await getPendingOfflineSyncCount();
 
       setFirestoreSaveStatus('error');
       setIsFirestoreOffline(parsed.isConnection || classified.offline);
@@ -976,6 +1266,8 @@ export default function App() {
           studentId: 'Preceptors & Mentors',
           liveServerSaved: true,
           cloudDbSaved: false,
+          savedLocallyOnPhone: true,
+          pendingQueueCount: latestQueueTotal,
           detailMessage: parsed.message,
         });
       } else {
@@ -987,6 +1279,8 @@ export default function App() {
           studentId: 'Preceptors & Mentors',
           liveServerSaved: true,
           cloudDbSaved: false,
+          savedLocallyOnPhone: true,
+          pendingQueueCount: latestQueueTotal,
           canRetry: true,
           detailMessage: parsed.message,
         });
@@ -1011,6 +1305,10 @@ export default function App() {
         const staffVerified = await checkIsStaffInFirestore(firebaseUser);
         if (cancelled) return;
         setIsFirestoreStaff(staffVerified);
+
+        // Flush any queued offline phone changes FIRST before pulling remote cloud state
+        await flushOfflineQueue(wasOfflineRef.current);
+        if (cancelled) return;
 
         const currentRoster = cohortStudentsRef.current;
         const pinLookup: Record<string, string> = {};
@@ -1198,6 +1496,22 @@ export default function App() {
       }
     };
   }, [authReady, firebaseUser, isRootAdmin]);
+
+  // Automatic flush & live sync reconnection when phone regains internet access
+  useEffect(() => {
+    if (!isOnline) {
+      wasOfflineRef.current = true;
+      return;
+    }
+
+    if (wasOfflineRef.current) {
+      wasOfflineRef.current = false;
+      cloudSync.fetchInitialState();
+      if (firebaseUser && firebaseUser.emailVerified) {
+        flushOfflineQueue(true);
+      }
+    }
+  }, [isOnline, firebaseUser]);
 
   // Automatically broadcast local edits to WebSocket AND persist permanently to Firestore
   useEffect(() => {
@@ -2090,21 +2404,48 @@ export default function App() {
         finalSignoff,
         updatedAt: new Date().toISOString(),
       };
+      const safeId = toFirestoreSafeId(updatedRecord.id, 'student');
+      enqueueOfflineSyncTask({
+        id: `attachment_delete:${safeId}:${targetLog.sessionNumber}:${attachmentId}`,
+        kind: 'attachment_delete',
+        studentId: updatedRecord.id,
+        sessionNumber: targetLog.sessionNumber,
+        attachmentId,
+        remainingAttachments,
+        queuedAt: new Date().toISOString(),
+        attempts: 0,
+      });
+      enqueueOfflineSyncTask({
+        id: `student:${safeId}`,
+        kind: 'student',
+        record: updatedRecord,
+        isStaffAction: false,
+        actionTitle: `Removed evidence from Session ${targetLog.sessionNumber}`,
+        roleSource: 'trainee',
+        queuedAt: new Date().toISOString(),
+        attempts: 0,
+      });
       cloudSync.syncStudentNow(
         updatedRecord,
         'trainee',
         `Student removed evidence attachment from Session ${targetLog.sessionNumber}`
       );
-      if (firebaseUser && firebaseUser.emailVerified) {
+      if (firebaseUser && firebaseUser.emailVerified && isOnline) {
         removeAttachmentFromFirestore(
           firebaseUser,
           updatedRecord.id,
           targetLog.sessionNumber,
           attachmentId,
           remainingAttachments
-        ).catch((err) => {
-          console.warn('[FirestoreSync] Attachment deletion note:', err?.message || err);
-        });
+        )
+          .then(() =>
+            removeOfflineSyncTask(
+              `attachment_delete:${safeId}:${targetLog.sessionNumber}:${attachmentId}`
+            )
+          )
+          .catch((err) => {
+            console.warn('[FirestoreSync] Attachment deletion note:', err?.message || err);
+          });
       }
     }
   };
@@ -2210,13 +2551,25 @@ export default function App() {
       lastSyncedHashRef.current = hash;
       lastFirestoreHashRef.current = hash;
 
+      const safeId = toFirestoreSafeId(updatedRecord.id, 'student');
+      enqueueOfflineSyncTask({
+        id: `student:${safeId}`,
+        kind: 'student',
+        record: updatedRecord,
+        isStaffAction: userRole === 'preceptor' || userRole === 'lead_educator',
+        actionTitle: `Updated trainee profile (${updatedRecord.traineeInfo.traineeName || trimmedTraineeId})`,
+        roleSource: userRole === 'preceptor' || userRole === 'lead_educator' ? 'preceptor' : 'trainee',
+        queuedAt: new Date().toISOString(),
+        attempts: 0,
+      });
+
       cloudSync.syncStudentNow(
         updatedRecord,
         userRole === 'preceptor' || userRole === 'lead_educator' ? 'preceptor' : 'trainee',
         `Updated trainee profile for ${updatedRecord.traineeInfo.traineeName || trimmedTraineeId}`
       );
 
-      if (firebaseUser && firebaseUser.emailVerified) {
+      if (firebaseUser && firebaseUser.emailVerified && isOnline) {
         if (firestoreDebounceRef.current) clearTimeout(firestoreDebounceRef.current);
         persistStudentToFirestore(updatedRecord);
       }
@@ -2317,6 +2670,7 @@ export default function App() {
     setIsRetryingFirestore(true);
     try {
       await reconnectFirestoreNetwork();
+      await flushOfflineQueue(true);
       await persistStudentToFirestore(currentStudentRecord);
     } finally {
       setIsRetryingFirestore(false);
@@ -2330,7 +2684,10 @@ export default function App() {
       'Manual synchronization requested'
     );
     if (firebaseUser && firebaseUser.emailVerified) {
-      reconnectFirestoreNetwork().then(() => persistStudentToFirestore(currentStudentRecord));
+      reconnectFirestoreNetwork().then(async () => {
+        await flushOfflineQueue(true);
+        await persistStudentToFirestore(currentStudentRecord);
+      });
     }
   };
 
@@ -2490,7 +2847,12 @@ export default function App() {
                 currentStudent={currentStudentRecord}
                 onForceSync={handleForceSync}
                 userRole={userRole}
+                isOnline={isOnline}
+                pendingSyncCount={pendingQueueCount}
+                isFlushingOfflineQueue={isFlushingOfflineQueue}
               />
+
+              <PWAInstallButton />
 
               <button
                 type="button"
@@ -2607,8 +2969,75 @@ export default function App() {
           </div>
         </header>
 
+        {/* Offline Mode & Pending Cloud Sync Banner */}
+        {(!isOnline || (isOnline && pendingQueueCount > 0)) && (
+          <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 pt-4">
+            {!isOnline ? (
+              <div className="p-3.5 rounded-xl bg-teal-50 border border-teal-300 text-teal-950 text-xs flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <WifiOff className="w-4 h-4 text-teal-700 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-bold text-teal-950 flex items-center gap-2 flex-wrap">
+                      <span>Offline Mode Active — Working Without Internet</span>
+                      {pendingQueueCount > 0 && (
+                        <span className="text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300 px-2 py-0.5 rounded-md">
+                          {pendingQueueCount} Change{pendingQueueCount === 1 ? '' : 's'} Saved on Phone · Waiting for Internet
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-teal-800">
+                      All logs, compressed photos, trainee info, and preceptor signatures are saved safely on your phone. Once you reach Wi-Fi or mobile data, they will upload permanently to Cloud DB.
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-1.5 text-[11px] font-semibold text-teal-800 shrink-0">
+                  <Smartphone className="w-3.5 h-3.5" />
+                  <span>Phone Storage Ready</span>
+                </div>
+              </div>
+            ) : (
+              <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-start gap-2.5">
+                  <UploadCloud className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                  <div className="space-y-0.5">
+                    <div className="font-bold text-amber-950">
+                      Internet Restored — {pendingQueueCount} Offline Change{pendingQueueCount === 1 ? '' : 's'} Ready to Save Permanently on Cloud
+                    </div>
+                    <p className="text-[11px] text-amber-900">
+                      {firebaseUser
+                        ? 'Click Upload Now if automatic sync has not started yet.'
+                        : 'Sign in with Google once so these queued phone entries save permanently into your Cloud Database.'}
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  {firebaseUser ? (
+                    <button
+                      type="button"
+                      onClick={() => flushOfflineQueue(true)}
+                      disabled={isFlushingOfflineQueue}
+                      className="px-3 py-1.5 bg-amber-700 hover:bg-amber-800 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                    >
+                      {isFlushingOfflineQueue ? 'Uploading to Cloud...' : 'Upload to Cloud Now'}
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={signInWithGoogle}
+                      disabled={isSigningIn}
+                      className="px-3 py-1.5 bg-teal-800 hover:bg-teal-900 text-white rounded-lg text-[11px] font-bold transition-colors cursor-pointer"
+                    >
+                      {isSigningIn ? 'Signing in...' : 'Sign in & Upload Now'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Persistent Cloud Database Sign-In / Error Banner */}
-        {(authError || firestoreErrorMsg || (!firebaseUser && authReady && !dismissAuthBanner)) && (
+        {(authError || (firestoreErrorMsg && isOnline) || (!firebaseUser && authReady && !dismissAuthBanner && isOnline)) && (
           <div className="max-w-7xl w-full mx-auto px-4 sm:px-8 pt-4">
             {(authError || firestoreErrorMsg) ? (
               <div
@@ -2629,7 +3058,7 @@ export default function App() {
                       {String(firestoreErrorMsg || authError).includes('Quota exceeded')
                         ? 'Firestore Daily Free-Tier Quota Exceeded (resets tomorrow).'
                         : isFirestoreOffline && !authError
-                          ? 'Cloud Database Offline — Saved Locally'
+                          ? 'Cloud Database Offline — Saved Safely on Phone'
                           : 'Cloud Database Notice'}
                     </div>
                     <div
@@ -2947,7 +3376,6 @@ export default function App() {
         onRetry={async () => {
           const pendingPreceptors = pendingPreceptorsRetryRef.current;
           const pending = pendingCloudRetryRef.current;
-          if (!pending && !pendingPreceptors) return;
           setIsRetryingCloudPopup(true);
           try {
             await reconnectFirestoreNetwork();
@@ -2959,6 +3387,8 @@ export default function App() {
               );
             } else if (pending) {
               await saveAndConfirmStudentToCloud(pending);
+            } else {
+              await flushOfflineQueue(true);
             }
           } finally {
             setIsRetryingCloudPopup(false);

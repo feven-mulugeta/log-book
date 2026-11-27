@@ -12,6 +12,8 @@ import {
   X,
   WifiOff,
   ServerCrash,
+  Smartphone,
+  UploadCloud,
 } from 'lucide-react';
 
 export type CloudSavePopupStatus =
@@ -34,6 +36,8 @@ export interface CloudSavePopupState {
   cloudDbSaved?: boolean;
   detailMessage?: string;
   canRetry?: boolean;
+  savedLocallyOnPhone?: boolean;
+  pendingQueueCount?: number;
 }
 
 interface CloudSaveStatusModalProps {
@@ -110,15 +114,20 @@ export function CloudSaveStatusModal({
                   : isSaved
                     ? 'Cloud Database Confirmed'
                     : isConnection
-                      ? 'Save Failed · Connection Problem'
+                      ? state.savedLocallyOnPhone
+                        ? 'Offline Mode · Saved on Your Phone'
+                        : 'Save Failed · Connection Problem'
                       : isAuth
-                        ? 'Not Saved Permanently · Sign-In Needed'
+                        ? 'Saved on Phone · Sign-In Needed for Cloud'
                         : 'Save Failed · Non-Connection Error'}
               </p>
               <h3 id="cloud-save-popup-title" className="text-sm font-bold leading-snug">
                 {isSaving && 'Saving to Cloud Database...'}
                 {isSaved && 'Permanently Saved on Cloud Database'}
-                {isConnection && 'NOT Saved to Cloud Database'}
+                {isConnection &&
+                  (state.savedLocallyOnPhone
+                    ? 'Saved on Phone · Pending Cloud Upload'
+                    : 'NOT Saved to Cloud Database')}
                 {isAuth && 'NOT Saved on Cloud Database'}
                 {isOther && 'NOT Saved to Cloud Database'}
               </h3>
@@ -222,15 +231,42 @@ export function CloudSaveStatusModal({
 
           {isConnection && (
             <div className="space-y-2.5">
+              {state.savedLocallyOnPhone && (
+                <div className="p-3.5 rounded-xl bg-teal-50 border border-teal-200 text-teal-950 flex items-start gap-2.5">
+                  <Smartphone className="w-4 h-4 text-teal-700 shrink-0 mt-0.5" />
+                  <div className="space-y-1">
+                    <p className="font-bold text-teal-900">
+                      Saved Safely on Your Phone (Offline Mode)
+                    </p>
+                    <p className="text-[11px] text-teal-800 leading-relaxed">
+                      Your work is stored in your phone&rsquo;s offline database so closing the app or losing signal will <strong>not</strong> erase it.
+                    </p>
+                  </div>
+                </div>
+              )}
+
               <div className="p-3.5 rounded-xl bg-amber-50 border border-amber-300 text-amber-950 flex items-start gap-2.5">
-                <CloudOff className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                {state.savedLocallyOnPhone ? (
+                  <UploadCloud className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                ) : (
+                  <CloudOff className="w-4 h-4 text-amber-700 shrink-0 mt-0.5" />
+                )}
                 <div className="space-y-1">
                   <p className="font-bold text-amber-950">
-                    Connection Problem — Data NOT Confirmed in Cloud Database
+                    {state.savedLocallyOnPhone
+                      ? 'Waiting for Internet to Save Permanently on Cloud'
+                      : 'Connection Problem — Data NOT Confirmed in Cloud Database'}
                   </p>
                   <p className="text-[11px] text-amber-900 leading-relaxed">
-                    Your entry could <strong>not</strong> reach or be confirmed by the Cloud Database due to an offline state, weak internet connection, or network timeout. It is currently held on this device only.
+                    {state.savedLocallyOnPhone
+                      ? 'This entry is NOT in the permanent Cloud Database yet because your phone is currently offline. Keep working normally — as soon as you reach Wi-Fi or mobile data and open the app, it will automatically upload permanently.'
+                      : 'Your entry could not reach or be confirmed by the Cloud Database due to an offline state, weak internet connection, or network timeout.'}
                   </p>
+                  {typeof state.pendingQueueCount === 'number' && state.pendingQueueCount > 0 && (
+                    <p className="text-[11px] font-bold text-amber-900 bg-amber-100/90 px-2.5 py-1 rounded-lg border border-amber-200 inline-block mt-1">
+                      {state.pendingQueueCount} pending change{state.pendingQueueCount === 1 ? '' : 's'} queued on phone
+                    </p>
+                  )}
                   {state.detailMessage && (
                     <p className="text-[11px] font-medium text-amber-900 bg-amber-100/80 px-2.5 py-1.5 rounded-lg border border-amber-200 mt-1">
                       Details: {state.detailMessage}
@@ -324,7 +360,11 @@ export function CloudSaveStatusModal({
                     : 'bg-slate-100 hover:bg-slate-200 text-slate-800'
                 }`}
               >
-                {isSaved ? 'OK, Continue' : 'Close'}
+                {isSaved
+                  ? 'OK, Continue'
+                  : isConnection && state.savedLocallyOnPhone
+                    ? 'Continue Working Offline'
+                    : 'Close'}
               </button>
             </div>
           )}
