@@ -11,13 +11,8 @@ export default defineConfig(() => {
       tailwindcss(),
       VitePWA({
         registerType: 'autoUpdate',
-        includeAssets: [
-          'favicon.png',
-          'apple-touch-icon.png',
-          'icon-192.png',
-          'icon-512.png',
-          'icon-maskable-512.png',
-        ],
+        useCredentials: true,
+        includeAssets: [],
         manifest: {
           id: '/',
           name: 'NursLog - Nursing e-Logbook & Clinical Portfolio',
@@ -51,14 +46,38 @@ export default defineConfig(() => {
           ],
         },
         workbox: {
-          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2,json}'],
+          globPatterns: ['**/*.{js,css,html,ico,png,svg,woff,woff2}'],
           maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
           navigateFallback: 'index.html',
           navigateFallbackDenylist: [/^\/api\//, /^\/ws\//, /^\/__/],
           runtimeCaching: [
             {
-              urlPattern: /^\/api\/.*/i,
+              urlPattern: ({ url }) =>
+                url.origin === self.location.origin &&
+                (url.pathname.startsWith('/api/') ||
+                  url.pathname.startsWith('/ws/') ||
+                  url.pathname.startsWith('/__/')),
               handler: 'NetworkOnly',
+            },
+            {
+              urlPattern: ({ url }) =>
+                url.origin === self.location.origin &&
+                !url.pathname.startsWith('/api/') &&
+                !url.pathname.startsWith('/ws/') &&
+                !url.pathname.startsWith('/__') &&
+                !url.pathname.endsWith('/manifest.webmanifest'),
+              handler: 'NetworkFirst',
+              options: {
+                cacheName: 'app-runtime-shell',
+                networkTimeoutSeconds: 4,
+                expiration: {
+                  maxEntries: 250,
+                  maxAgeSeconds: 60 * 60 * 24 * 30,
+                },
+                cacheableResponse: {
+                  statuses: [0, 200],
+                },
+              },
             },
             {
               urlPattern: /^https:\/\/fonts\.googleapis\.com\/.*/i,
@@ -92,7 +111,7 @@ export default defineConfig(() => {
         },
         devOptions: {
           enabled: true,
-          type: 'module',
+          type: 'classic',
           navigateFallback: 'index.html',
         },
       }),

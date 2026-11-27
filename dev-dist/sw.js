@@ -67,7 +67,7 @@ if (!self.define) {
     });
   };
 }
-define(['./workbox-43e44e5a'], (function (workbox) { 'use strict';
+define(['./workbox-25ee6505'], (function (workbox) { 'use strict';
 
   self.skipWaiting();
   workbox.clientsClaim();
@@ -78,14 +78,28 @@ define(['./workbox-43e44e5a'], (function (workbox) { 'use strict';
    */
   workbox.precacheAndRoute([{
     "url": "index.html",
-    "revision": "0.6e0v33n00ao"
+    "revision": "0.g6lksk6mn9"
   }], {});
   workbox.cleanupOutdatedCaches();
   workbox.registerRoute(new workbox.NavigationRoute(workbox.createHandlerBoundToURL("index.html"), {
     allowlist: [/^\/$/],
     denylist: [/^\/api\//, /^\/ws\//, /^\/__/]
   }));
-  workbox.registerRoute(/^\/api\/.*/i, new workbox.NetworkOnly(), 'GET');
+  workbox.registerRoute(({
+    url
+  }) => url.origin === self.location.origin && (url.pathname.startsWith("/api/") || url.pathname.startsWith("/ws/") || url.pathname.startsWith("/__/")), new workbox.NetworkOnly(), 'GET');
+  workbox.registerRoute(({
+    url
+  }) => url.origin === self.location.origin && !url.pathname.startsWith("/api/") && !url.pathname.startsWith("/ws/") && !url.pathname.startsWith("/__") && !url.pathname.endsWith("/manifest.webmanifest"), new workbox.NetworkFirst({
+    "cacheName": "app-runtime-shell",
+    "networkTimeoutSeconds": 4,
+    plugins: [new workbox.ExpirationPlugin({
+      maxEntries: 250,
+      maxAgeSeconds: 2592000
+    }), new workbox.CacheableResponsePlugin({
+      statuses: [0, 200]
+    })]
+  }), 'GET');
   workbox.registerRoute(/^https:\/\/fonts\.googleapis\.com\/.*/i, new workbox.CacheFirst({
     "cacheName": "google-fonts-cache",
     plugins: [new workbox.ExpirationPlugin({
